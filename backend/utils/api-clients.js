@@ -46,7 +46,7 @@ class PolygonClient {
 
   async getAllTickers(limit = 1000) {
     const tickers = [];
-    let url = `${this.base}/v3/reference/tickers?market=stocks&active=true&limit=${limit}&apiKey=${this.apiKey}`;
+    let url = `${this.base}/v3/reference/tickers?market=stocks&active=true&exchange=XNAS&limit=${limit}&apiKey=${this.apiKey}`;
     while (url) {
       const data = await fetchWithRetry(url);
       if (data.results) tickers.push(...data.results);

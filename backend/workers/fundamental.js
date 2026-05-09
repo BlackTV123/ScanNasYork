@@ -32,14 +32,14 @@ async function runFundamentalWorker() {
     const tickers = await Ticker.findAll({ attributes: ['symbol'], raw: true });
     logger.info(`Loaded ${tickers.length} tickers to process.`);
 
-    // 2. Split symbols into batches of 10
-    const batches = chunkArray(tickers, 10);
+    // 2. Split symbols into batches of 3
+    const batches = chunkArray(tickers, 3);
     let processed = 0, errors = 0;
 
     for (let i = 0; i < batches.length; i++) {
       const batch = batches[i];
       
-      // Process 10 stocks concurrently
+      // Process 3 stocks concurrently
       const fetchPromises = batch.map(async (t) => {
         const symbol = t.symbol;
         try {
@@ -103,13 +103,13 @@ async function runFundamentalWorker() {
         }
       });
 
-      // Wait for all 10 stocks to finish
+      // Wait for all 3 stocks to finish
       await Promise.all(fetchPromises);
       
       logger.info(`Completed batch ${i + 1}/${batches.length} (${processed} ok, ${errors} err)`);
 
-      // 🛑 SLEEP: 1 second between batches to keep Yahoo happy!
-      await sleep(1000);
+      // 🛑 SLEEP: 2 seconds between batches to keep Yahoo happy!
+      await sleep(2000);
     }
 
     logger.info(`=== Yahoo Worker DONE === ${processed} ok, ${errors} errors in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
