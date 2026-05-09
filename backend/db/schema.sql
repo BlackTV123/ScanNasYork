@@ -61,6 +61,9 @@ CREATE TABLE Daily_Metrics (
 
   -- Technical Indicators
   rsi_14 DECIMAL(5, 2),
+  rsi_14_ma DECIMAL(5, 2),
+  rsi_14_bb_upper DECIMAL(5, 2),
+  rsi_14_bb_lower DECIMAL(5, 2),
   rsi_7 DECIMAL(5, 2),
   macd DECIMAL(10, 4),
   macd_signal DECIMAL(10, 4),

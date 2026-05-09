@@ -125,7 +125,7 @@ async function screenStocks(req, res) {
     if (symbols.length > 0) {
       // Get the latest metric row per symbol using a subquery
       const latestDates = await sequelize.query(`
-        SELECT DISTINCT ON (symbol) symbol, date, rsi_14, rsi_7, macd, macd_signal,
+        SELECT DISTINCT ON (symbol) symbol, date, rsi_14, rsi_14_ma, rsi_14_bb_upper, rsi_14_bb_lower, rsi_7, macd, macd_signal,
                macd_histogram, sma_20, sma_50, sma_200, volume, close
         FROM daily_metrics
         WHERE symbol IN (:symbols)
@@ -157,6 +157,9 @@ async function screenStocks(req, res) {
         latest_eps_yoy_growth: t.latest_eps_yoy_growth,
         pe_ratio: t.pe_ratio,
         rsi_14: m.rsi_14 || null,
+        rsi_14_ma: m.rsi_14_ma || null,
+        rsi_14_bb_upper: m.rsi_14_bb_upper || null,
+        rsi_14_bb_lower: m.rsi_14_bb_lower || null,
         rsi_7: m.rsi_7 || null,
         macd: m.macd || null,
         macd_signal: m.macd_signal || null,
@@ -216,6 +219,9 @@ async function getStockDetail(req, res) {
         current_metrics: latestMetric ? {
           price: latestMetric.close,
           rsi_14: latestMetric.rsi_14,
+          rsi_14_ma: latestMetric.rsi_14_ma,
+          rsi_14_bb_upper: latestMetric.rsi_14_bb_upper,
+          rsi_14_bb_lower: latestMetric.rsi_14_bb_lower,
           rsi_7: latestMetric.rsi_7,
           sma_20: latestMetric.sma_20,
           sma_50: latestMetric.sma_50,

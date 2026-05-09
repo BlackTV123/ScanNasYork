@@ -114,7 +114,7 @@ async function processTickerTechnicals(alphaVantage, symbol, date, todayBar) {
   await DailyMetric.upsert({
     symbol, date,
     open: todayBar.o, high: todayBar.h, low: todayBar.l, close: todayBar.c, volume: todayBar.v,
-    rsi_14: ind.rsi_14, rsi_7: ind.rsi_7,
+    rsi_14: ind.rsi_14, rsi_14_ma: ind.rsi_14_ma, rsi_14_bb_upper: ind.rsi_14_bb_upper, rsi_14_bb_lower: ind.rsi_14_bb_lower, rsi_7: ind.rsi_7,
     macd: ind.macd, macd_signal: ind.macd_signal, macd_histogram: ind.macd_histogram,
     sma_20: ind.sma_20, sma_50: ind.sma_50, sma_200: ind.sma_200,
     bb_upper: ind.bb_upper, bb_middle: ind.bb_middle, bb_lower: ind.bb_lower,

@@ -38,7 +38,19 @@ function ema(data, period) {
  * @returns {number|null} RSI value 0-100
  */
 function rsi(closes, period = 14) {
-  if (closes.length < period + 1) return null;
+  const arr = rsiArray(closes, period);
+  return arr[arr.length - 1];
+}
+
+/**
+ * Calculate RSI Array.
+ * @param {number[]} closes
+ * @param {number} period
+ * @returns {number[]} Array of RSI values with nulls for initial periods
+ */
+function rsiArray(closes, period = 14) {
+  const result = new Array(closes.length).fill(null);
+  if (closes.length <= period) return result;
 
   let gains = 0, losses = 0;
   for (let i = 1; i <= period; i++) {
@@ -50,15 +62,21 @@ function rsi(closes, period = 14) {
   let avgGain = gains / period;
   let avgLoss = losses / period;
 
+  let rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+  result[period] = parseFloat((100 - 100 / (1 + rs)).toFixed(2));
+
   for (let i = period + 1; i < closes.length; i++) {
     const diff = closes[i] - closes[i - 1];
     avgGain = (avgGain * (period - 1) + Math.max(diff, 0)) / period;
     avgLoss = (avgLoss * (period - 1) + Math.max(-diff, 0)) / period;
+    if (avgLoss === 0) {
+      result[i] = 100;
+    } else {
+      rs = avgGain / avgLoss;
+      result[i] = parseFloat((100 - 100 / (1 + rs)).toFixed(2));
+    }
   }
-
-  if (avgLoss === 0) return 100;
-  const rs = avgGain / avgLoss;
-  return parseFloat((100 - 100 / (1 + rs)).toFixed(2));
+  return result;
 }
 
 /**
@@ -163,8 +181,18 @@ function calculateAll(bars) {
   const bb = bollingerBands(closes);
   const barsForATR = bars.map(b => ({ high: b.h, low: b.l, close: b.c }));
 
+  // RSI & RSI-based MA and BB (using length 14 as in TradingView script)
+  const rsi14Arr = rsiArray(closes, 14);
+  const rsi14Val = rsi14Arr[rsi14Arr.length - 1];
+  const cleanRsi = rsi14Arr.filter(v => v !== null);
+  const rsi_ma = sma(cleanRsi, 14) ? parseFloat(sma(cleanRsi, 14).toFixed(2)) : null;
+  const rsi_bb = bollingerBands(cleanRsi, 14, 2);
+
   return {
-    rsi_14: rsi(closes, 14),
+    rsi_14: rsi14Val,
+    rsi_14_ma: rsi_ma,
+    rsi_14_bb_upper: rsi_bb?.upper ?? null,
+    rsi_14_bb_lower: rsi_bb?.lower ?? null,
     rsi_7: rsi(closes, 7),
     macd: macdResult?.macd ?? null,
     macd_signal: macdResult?.signal ?? null,
@@ -179,4 +207,4 @@ function calculateAll(bars) {
   };
 }
 
-module.exports = { sma, ema, rsi, macd, bollingerBands, atr, calculateAll };
+module.exports = { sma, ema, rsi, rsiArray, macd, bollingerBands, atr, calculateAll };
