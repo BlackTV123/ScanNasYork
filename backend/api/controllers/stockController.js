@@ -44,6 +44,12 @@ async function screenStocks(req, res) {
     if (f.market_cap_min !== undefined) tickerWhere.market_cap = { ...tickerWhere.market_cap, [Op.gte]: parseFloat(f.market_cap_min) };
     if (f.market_cap_max !== undefined) tickerWhere.market_cap = { ...tickerWhere.market_cap, [Op.lte]: parseFloat(f.market_cap_max) };
     if (f.sector) tickerWhere.sector = f.sector;
+    if (f.search) {
+      tickerWhere[Op.or] = [
+        { symbol: { [Op.iLike]: `%${f.search}%` } },
+        { company_name: { [Op.iLike]: `%${f.search}%` } }
+      ];
+    }
 
     // Build DailyMetric WHERE conditions
     const metricWhere = {};

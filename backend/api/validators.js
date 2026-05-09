@@ -23,6 +23,7 @@ const screenQuerySchema = Joi.object({
   market_cap_min: Joi.number().optional(),
   market_cap_max: Joi.number().optional(),
   sector: Joi.string().optional(),
+  search: Joi.string().optional(),
 
   // Pagination / Sorting
   limit: Joi.number().integer().min(1).max(500).default(50),

@@ -134,6 +134,9 @@
     f.eps_yoy_growth_min = val('filter-growth-min');
     f.market_cap_min = val('filter-mcap-min');
     f.market_cap_max = val('filter-mcap-max');
+    
+    const searchVal = val('filter-search');
+    if (searchVal) f.search = searchVal;
 
     const sector = val('filter-sector');
     if (sector) f.sector = sector;
