@@ -76,22 +76,9 @@ async function screenStocks(req, res) {
     // For technical filters, we need a subquery approach
     // First get symbols matching metric filters, then filter tickers
     let symbolFilter = null;
-    if (Object.keys(metricWhere).length > 0 || f.price_above_sma_20 || f.price_above_sma_50) {
+    if (Object.keys(metricWhere).length > 0) {
       // Get latest metric per symbol that matches filters
       const extraWhere = { ...metricWhere };
-
-      // Build raw conditions for price > SMA comparisons
-      const rawConditions = [];
-      if (f.price_above_sma_20 === 'true' || f.price_above_sma_20 === true) {
-        rawConditions.push(literal('"close" > "sma_20"'));
-      }
-      if (f.price_above_sma_50 === 'true' || f.price_above_sma_50 === true) {
-        rawConditions.push(literal('"close" > "sma_50"'));
-      }
-
-      if (rawConditions.length > 0) {
-        extraWhere[Op.and] = rawConditions;
-      }
 
       // Get latest date with metrics
       const latestMetrics = await DailyMetric.findAll({
@@ -132,7 +119,7 @@ async function screenStocks(req, res) {
       // Get the latest metric row per symbol using a subquery
       const latestDates = await sequelize.query(`
         SELECT DISTINCT ON (symbol) symbol, date, rsi_14, rsi_14_ma, rsi_14_bb_upper, rsi_14_bb_lower, rsi_7, macd, macd_signal,
-               macd_histogram, sma_20, sma_50, sma_200, volume, close
+               macd_histogram, volume, close
         FROM daily_metrics
         WHERE symbol IN (:symbols)
         ORDER BY symbol, date DESC
@@ -170,9 +157,6 @@ async function screenStocks(req, res) {
         macd: m.macd || null,
         macd_signal: m.macd_signal || null,
         macd_histogram: m.macd_histogram || null,
-        sma_20: m.sma_20 || null,
-        sma_50: m.sma_50 || null,
-        sma_200: m.sma_200 || null,
         volume: m.volume || null,
         close: m.close || null,
         metrics_date: m.date || null,

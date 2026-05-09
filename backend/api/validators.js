@@ -9,8 +9,6 @@ const screenQuerySchema = Joi.object({
   rsi_min: Joi.number().min(0).max(100).optional(),
   rsi_max: Joi.number().min(0).max(100).optional(),
   macd_positive: Joi.boolean().optional(),
-  price_above_sma_20: Joi.boolean().optional(),
-  price_above_sma_50: Joi.boolean().optional(),
 
   // Fundamental Filters
   eps_min: Joi.number().optional(),

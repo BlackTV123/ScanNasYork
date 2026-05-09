@@ -53,6 +53,7 @@
     // Reset button
     document.getElementById('btn-reset').addEventListener('click', () => {
       document.querySelectorAll('.filter-group input').forEach(i => { i.value = ''; });
+      document.getElementById('filter-search').value = '';
       document.querySelectorAll('.filter-group select').forEach(s => { s.selectedIndex = 0; });
       document.querySelectorAll('.toggle-switch').forEach(t => { t.classList.remove('active'); });
       currentFilters = {};
@@ -73,7 +74,7 @@
     });
 
     // Enter key on inputs
-    document.querySelectorAll('.filter-group input').forEach(input => {
+    document.querySelectorAll('.filter-group input, #filter-search').forEach(input => {
       input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { currentPage = 0; runScreen(); }
       });
@@ -142,8 +143,6 @@
     if (sector) f.sector = sector;
 
     if (isActive('toggle-macd')) f.macd_positive = true;
-    if (isActive('toggle-sma20')) f.price_above_sma_20 = true;
-    if (isActive('toggle-sma50')) f.price_above_sma_50 = true;
 
     f.sort_by = currentSort.by;
     f.sort_order = currentSort.order;
@@ -204,6 +203,7 @@
         <td class="cell-number">${row.ttm_eps != null ? formatNumber(row.ttm_eps) : '—'}</td>
         <td class="cell-number">${formatLargeNumber(row.ttm_revenue)}</td>
         <td class="cell-number">${row.pe_ratio != null ? formatNumber(row.pe_ratio) : '—'}</td>
+        <td class="cell-number">${formatLargeNumber(row.market_cap)}</td>
         <td class="cell-number ${valueColorClass(row.latest_eps_yoy_growth)}">
           ${formatPct(row.latest_eps_yoy_growth)}
         </td>
