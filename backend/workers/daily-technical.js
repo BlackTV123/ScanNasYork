@@ -15,6 +15,15 @@ const logger = require('../utils/logger');
 // Sleep utility to avoid Yahoo IP bans
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Helper function to split array into chunks (batches)
+function chunkArray(array, chunkSize) {
+  const chunks = [];
+  for (let i = 0; i < array.length; i += chunkSize) {
+    chunks.push(array.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+
 async function runTechnicalWorker() {
   const startTime = Date.now();
   logger.info('=== Yahoo Technical Worker START ===');
@@ -42,59 +51,69 @@ async function runTechnicalWorker() {
     period1.setDate(period1.getDate() - 300);
     const queryOptions = { period1: period1.toISOString().split('T')[0] };
 
-    // 2. Process sequentially
+    // 2. Smart Batching: Process 10 at a time
+    const batches = chunkArray(tickers, 10);
     let processed = 0, errors = 0;
 
-    for (let i = 0; i < tickers.length; i++) {
-      const symbol = tickers[i].symbol;
-      try {
-        const result = await yf.chart(symbol, queryOptions);
-        
-        if (!result || !result.quotes || result.quotes.length === 0) {
-          throw new Error('No historical data found');
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
+      
+      const fetchPromises = batch.map(async (t) => {
+        const symbol = t.symbol;
+        try {
+          const result = await yf.chart(symbol, queryOptions);
+          
+          if (!result || !result.quotes || result.quotes.length === 0) {
+            throw new Error('No historical data found');
+          }
+
+          // Convert Yahoo data to our OHLCV format
+          const ohlcvBars = result.quotes.map(r => ({
+            o: r.open, h: r.high, l: r.low, c: r.close, v: r.volume
+          }));
+
+          // Calculate all technical indicators perfectly using local math
+          const ind = calculateAll(ohlcvBars);
+
+          // Get today's bar
+          const todayBar = ohlcvBars[ohlcvBars.length - 1];
+          const dateStr = result.quotes[result.quotes.length - 1].date.toISOString().split('T')[0];
+
+          // Upsert into DailyMetric
+          await DailyMetric.upsert({
+            symbol,
+            date: dateStr,
+            open: todayBar.o, high: todayBar.h, low: todayBar.l, close: todayBar.c, volume: todayBar.v,
+            rsi_14: ind.rsi_14, rsi_14_ma: ind.rsi_14_ma, rsi_14_bb_upper: ind.rsi_14_bb_upper, rsi_14_bb_lower: ind.rsi_14_bb_lower, rsi_7: ind.rsi_7,
+            macd: ind.macd, macd_signal: ind.macd_signal, macd_histogram: ind.macd_histogram,
+            bb_upper: ind.bb_upper, bb_middle: ind.bb_middle, bb_lower: ind.bb_lower,
+            atr_14: ind.atr_14,
+          });
+
+          // Update ticker price
+          const prevClose = ohlcvBars.length >= 2 ? ohlcvBars[ohlcvBars.length - 2].c : todayBar.c;
+          const changePct = prevClose !== 0 ? ((todayBar.c - prevClose) / prevClose * 100).toFixed(2) : 0;
+
+          await Ticker.update(
+            { current_price: todayBar.c, price_change_pct: changePct, last_technical_update: new Date() },
+            { where: { symbol } }
+          );
+
+          processed++;
+          logger.debug(`✅ Processed ${symbol}`);
+        } catch (err) {
+          errors++;
+          // Even if it fails, update the timestamp so we don't infinitely retry broken tickers
+          await Ticker.update({ last_technical_update: new Date() }, { where: { symbol } });
+          logger.warn(`⚠️ Skipped ${symbol}: ${err.message}`);
         }
+      });
 
-        // Convert Yahoo data to our OHLCV format
-        const ohlcvBars = result.quotes.map(r => ({
-          o: r.open, h: r.high, l: r.low, c: r.close, v: r.volume
-        }));
+      await Promise.all(fetchPromises);
+      logger.info(`Completed batch ${i + 1}/${batches.length} (${processed} ok, ${errors} err)`);
 
-        // Calculate all technical indicators perfectly using local math
-        const ind = calculateAll(ohlcvBars);
-
-        // Get today's bar
-        const todayBar = ohlcvBars[ohlcvBars.length - 1];
-        const dateStr = result.quotes[result.quotes.length - 1].date.toISOString().split('T')[0];
-
-        // Upsert into DailyMetric
-        await DailyMetric.upsert({
-          symbol,
-          date: dateStr,
-          open: todayBar.o, high: todayBar.h, low: todayBar.l, close: todayBar.c, volume: todayBar.v,
-          rsi_14: ind.rsi_14, rsi_14_ma: ind.rsi_14_ma, rsi_14_bb_upper: ind.rsi_14_bb_upper, rsi_14_bb_lower: ind.rsi_14_bb_lower, rsi_7: ind.rsi_7,
-          macd: ind.macd, macd_signal: ind.macd_signal, macd_histogram: ind.macd_histogram,
-          bb_upper: ind.bb_upper, bb_middle: ind.bb_middle, bb_lower: ind.bb_lower,
-          atr_14: ind.atr_14,
-        });
-
-        // Update ticker price
-        const prevClose = ohlcvBars.length >= 2 ? ohlcvBars[ohlcvBars.length - 2].c : todayBar.c;
-        const changePct = prevClose !== 0 ? ((todayBar.c - prevClose) / prevClose * 100).toFixed(2) : 0;
-
-        await Ticker.update(
-          { current_price: todayBar.c, price_change_pct: changePct, last_technical_update: new Date() },
-          { where: { symbol } }
-        );
-
-        processed++;
-        logger.debug(`[${i + 1}/${tickers.length}] ✅ Processed ${symbol}`);
-      } catch (err) {
-        errors++;
-        logger.error(`[${i + 1}/${tickers.length}] ❌ Failed ${symbol}: ${err.message}`);
-      }
-
-      // 🛑 SLEEP: 250ms between stocks to avoid rate limits
-      await sleep(250);
+      // 🛑 SLEEP: 1 second between batches
+      await sleep(1000);
     }
 
     logger.info(`=== Yahoo Worker DONE === ${processed} ok, ${errors} errors in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
