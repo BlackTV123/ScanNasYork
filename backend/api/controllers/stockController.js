@@ -73,7 +73,6 @@ async function screenStocks(req, res) {
     if (Object.keys(metricWhere).length > 0) {
       // Get latest metric per symbol that matches filters
       const extraWhere = { ...metricWhere };
-
       // Get latest date with metrics
       const latestMetrics = await DailyMetric.findAll({
         attributes: ['symbol'],
@@ -97,6 +96,12 @@ async function screenStocks(req, res) {
     const [total, tickers] = await Promise.all([
       Ticker.count({ where: tickerWhere }),
       Ticker.findAll({
+        attributes: [
+          'symbol', 'company_name', 'sector', 'industry', 
+          'market_cap', 'current_price', 'price_change_pct', 
+          'ttm_eps', 'ttm_revenue', 'pe_ratio', 'latest_eps_yoy_growth',
+          'rsi_14', 'macd'
+        ],
         where: tickerWhere,
         order,
         limit,

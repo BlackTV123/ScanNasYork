@@ -50,6 +50,12 @@ const Ticker = sequelize.define('Ticker', {
   pe_ratio: {
     type: DataTypes.DECIMAL(10, 2),
   },
+  rsi_14: {
+    type: DataTypes.DECIMAL(10, 2),
+  },
+  macd: {
+    type: DataTypes.DECIMAL(10, 4),
+  },
   last_technical_update: {
     type: DataTypes.DATE,
   },

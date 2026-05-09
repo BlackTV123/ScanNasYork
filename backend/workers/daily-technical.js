@@ -101,7 +101,13 @@ async function runTechnicalWorker() {
           const changePct = prevClose !== 0 ? ((todayBar.c - prevClose) / prevClose * 100).toFixed(2) : 0;
 
           await Ticker.update(
-            { current_price: todayBar.c, price_change_pct: changePct, last_technical_update: new Date() },
+            { 
+              current_price: todayBar.c, 
+              price_change_pct: changePct, 
+              rsi_14: ind.rsi_14,
+              macd: ind.macd,
+              last_technical_update: new Date() 
+            },
             { where: { symbol } }
           );
 
