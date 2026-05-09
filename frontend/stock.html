@@ -125,9 +125,6 @@
     const cards = [
       { label: 'RSI (14)', value: m.rsi_14 != null ? parseFloat(m.rsi_14).toFixed(1) : '—' },
       { label: 'MACD', value: m.macd != null ? parseFloat(m.macd).toFixed(4) : '—' },
-      { label: 'SMA 20', value: formatPrice(m.sma_20) },
-      { label: 'SMA 50', value: formatPrice(m.sma_50) },
-      { label: 'SMA 200', value: formatPrice(m.sma_200) },
       { label: 'Volume', value: formatVolume(m.volume) },
       { label: 'TTM EPS', value: f.ttm_eps != null ? formatNumber(f.ttm_eps) : '—' },
       { label: 'TTM Revenue', value: formatLargeNumber(f.ttm_revenue) },
@@ -167,8 +164,7 @@
     const ctx = document.getElementById('price-chart').getContext('2d');
     const labels = historyData.map(d => d.date);
     const closes = historyData.map(d => parseFloat(d.close));
-    const sma20 = historyData.map(d => d.sma_20 ? parseFloat(d.sma_20) : null);
-    const sma50 = historyData.map(d => d.sma_50 ? parseFloat(d.sma_50) : null);
+    const macdHist = historyData.map(d => d.macd_histogram ? parseFloat(d.macd_histogram) : null);
 
     new Chart(ctx, {
       type: 'line',
@@ -187,24 +183,10 @@
             pointHoverRadius: 5,
           },
           {
-            label: 'SMA 20',
-            data: sma20,
-            borderColor: '#22d3ee',
-            borderWidth: 1.5,
-            borderDash: [5, 3],
-            fill: false,
-            tension: 0.3,
-            pointRadius: 0,
-          },
-          {
-            label: 'SMA 50',
-            data: sma50,
-            borderColor: '#f59e0b',
-            borderWidth: 1.5,
-            borderDash: [5, 3],
-            fill: false,
-            tension: 0.3,
-            pointRadius: 0,
+            label: 'MACD Hist',
+            data: macdHist,
+            type: 'bar',
+            backgroundColor: '#8b5cf6',
           },
         ],
       },

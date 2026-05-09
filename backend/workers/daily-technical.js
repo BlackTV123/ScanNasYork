@@ -33,12 +33,12 @@ async function runTechnicalWorker() {
 
     for (let i = 0; i < tickers.length; i++) {
       const symbol = tickers[i].symbol;
-      
+
       try {
         // Fetch historical data using Yahoo chart API
         const queryOptions = { period1: period1.toISOString().split('T')[0] };
         const result = await yf.chart(symbol, queryOptions);
-        
+
         if (!result || !result.quotes || result.quotes.length === 0) {
           throw new Error('No historical data found');
         }
@@ -61,7 +61,7 @@ async function runTechnicalWorker() {
 
         // Upsert into DailyMetric
         await DailyMetric.upsert({
-          symbol, 
+          symbol,
           date: dateStr,
           open: todayBar.o, high: todayBar.h, low: todayBar.l, close: todayBar.c, volume: todayBar.v,
           rsi_14: ind.rsi_14, rsi_14_ma: ind.rsi_14_ma, rsi_14_bb_upper: ind.rsi_14_bb_upper, rsi_14_bb_lower: ind.rsi_14_bb_lower, rsi_7: ind.rsi_7,
@@ -80,11 +80,11 @@ async function runTechnicalWorker() {
         );
 
         processed++;
-        logger.debug(`[${i+1}/${tickers.length}] ✅ Processed ${symbol}`);
+        logger.debug(`[${i + 1}/${tickers.length}] ✅ Processed ${symbol}`);
 
       } catch (err) {
         errors++;
-        logger.error(`[${i+1}/${tickers.length}] ❌ Failed ${symbol}: ${err.message}`);
+        logger.error(`[${i + 1}/${tickers.length}] ❌ Failed ${symbol}: ${err.message}`);
       }
 
       // 🛑 SLEEP: 0.5 seconds between requests to avoid Yahoo IP Ban

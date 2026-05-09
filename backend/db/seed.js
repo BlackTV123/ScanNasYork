@@ -88,10 +88,8 @@ async function seedDemo() {
         rsi_7: (20 + Math.random() * 60).toFixed(2),
         macd: (-2 + Math.random() * 4).toFixed(4),
         macd_signal: (-1 + Math.random() * 2).toFixed(4),
-        macd_histogram: (-1 + Math.random() * 2).toFixed(4),
-        sma_20: (p - 5 + Math.random() * 10).toFixed(2),
-        sma_50: (p - 10 + Math.random() * 20).toFixed(2),
-        sma_200: (p - 20 + Math.random() * 40).toFixed(2),
+        macd_histogram: (Math.random() * 2 - 1).toFixed(4),
+        bb_upper: (p * 1.05).toFixed(2),
       });
     }
 
