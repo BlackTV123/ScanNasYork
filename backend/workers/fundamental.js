@@ -11,18 +11,8 @@ const yf = new YahooFinance({ suppressNotices: ['yahooSurvey', 'ripHistorical'] 
 const { Ticker, IncomeStatement } = require('../models');
 const logger = require('../utils/logger');
 
-// Sleep utility to avoid Yahoo IP bans + Jitter
+// Sleep utility to avoid Yahoo IP bans
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const randomJitter = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
-
-// Helper function to split array into chunks (batches)
-function chunkArray(array, chunkSize) {
-  const chunks = [];
-  for (let i = 0; i < array.length; i += chunkSize) {
-    chunks.push(array.slice(i, i + chunkSize));
-  }
-  return chunks;
-}
 
 async function runFundamentalWorker() {
   const startTime = Date.now();
@@ -47,85 +37,73 @@ async function runFundamentalWorker() {
     });
     logger.info(`Loaded ${tickers.length} tickers to process.`);
 
-    // 2. Split symbols into batches of 5 (Smart Batching)
-    const batches = chunkArray(tickers, 5);
+    // 2. Process sequentially
     let processed = 0, errors = 0;
 
-    for (let i = 0; i < batches.length; i++) {
-      const batch = batches[i];
+    for (let i = 0; i < tickers.length; i++) {
+      const symbol = tickers[i].symbol;
+      try {
+        // Fetch quote and summary from Yahoo
+        const [quote, summary] = await Promise.all([
+          yf.quote(symbol).catch(() => null),
+          yf.quoteSummary(symbol, { modules: ['financialData', 'incomeStatementHistoryQuarterly'] }).catch(() => null)
+        ]);
 
-      // Process 5 stocks concurrently
-      const fetchPromises = batch.map(async (t) => {
-        const symbol = t.symbol;
-        try {
-          // Fetch quote and summary from Yahoo
-          const [quote, summary] = await Promise.all([
-            yf.quote(symbol).catch(() => null),
-            yf.quoteSummary(symbol, { modules: ['financialData', 'incomeStatementHistoryQuarterly'] }).catch(() => null)
-          ]);
-
-          if (!quote || !summary) {
-            throw new Error('No fundamental data found');
-          }
-
-          const fd = summary.financialData || {};
-
-          const updateData = {
-            market_cap: quote.marketCap || null,
-            pe_ratio: quote.trailingPE || null,
-            ttm_eps: quote.epsTrailingTwelveMonths || null,
-            ttm_revenue: fd.totalRevenue || null,
-            latest_eps_yoy_growth: fd.earningsGrowth ? (fd.earningsGrowth * 100).toFixed(2) : null,
-            last_fundamental_update: new Date()
-          };
-
-          // Update Ticker fundamentals
-          await Ticker.update(updateData, { where: { symbol } });
-
-          // If quarterly data is available, upsert it
-          const qs = summary.incomeStatementHistoryQuarterly?.incomeStatementHistory || [];
-          if (qs.length > 0) {
-            for (let qIdx = 0; qIdx < qs.length; qIdx++) {
-              const stmt = qs[qIdx];
-              if (!stmt.endDate) continue;
-
-              const reportDate = new Date(stmt.endDate);
-              const fiscalYear = reportDate.getFullYear();
-              // Approximation of quarter
-              const quarter = Math.floor((reportDate.getMonth() + 3) / 3);
-
-              await IncomeStatement.upsert({
-                symbol,
-                period_type: 'Quarterly',
-                fiscal_year: fiscalYear,
-                fiscal_period: `Q${quarter}`,
-                revenue: stmt.totalRevenue || null,
-                gross_profit: stmt.grossProfit || null,
-                operating_expenses: stmt.totalOperatingExpenses || null,
-                operating_income: stmt.operatingIncome || null,
-                net_income: stmt.netIncome || null,
-                report_date: stmt.endDate,
-                source_api: 'yahoo',
-              });
-            }
-          }
-
-          processed++;
-          logger.debug(`✅ Processed ${symbol}`);
-        } catch (err) {
-          errors++;
-          logger.error(`❌ Failed ${symbol}: ${err.message}`);
+        if (!quote || !summary) {
+          throw new Error('No fundamental data found');
         }
-      });
 
-      // Wait for all 5 stocks to finish
-      await Promise.all(fetchPromises);
+        const fd = summary.financialData || {};
+        
+        const updateData = {
+          market_cap: quote.marketCap || null,
+          pe_ratio: quote.trailingPE || null,
+          ttm_eps: quote.epsTrailingTwelveMonths || null,
+          ttm_revenue: fd.totalRevenue || null,
+          latest_eps_yoy_growth: fd.earningsGrowth ? (fd.earningsGrowth * 100).toFixed(2) : null,
+          last_fundamental_update: new Date()
+        };
 
-      logger.info(`Completed batch ${i + 1}/${batches.length} (${processed} ok, ${errors} err)`);
+        // Update Ticker fundamentals
+        await Ticker.update(updateData, { where: { symbol } });
 
-      // 🛑 JITTER SLEEP: Random sleep between 2.0s to 4.5s to look human
-      const jitterMs = randomJitter(2000, 4500);
-      await sleep(jitterMs);
+        // If quarterly data is available, upsert it
+        const qs = summary.incomeStatementHistoryQuarterly?.incomeStatementHistory || [];
+        if (qs.length > 0) {
+          for (let qIdx = 0; qIdx < qs.length; qIdx++) {
+            const stmt = qs[qIdx];
+            if (!stmt.endDate) continue;
+            
+            const reportDate = new Date(stmt.endDate);
+            const fiscalYear = reportDate.getFullYear();
+            // Approximation of quarter
+            const quarter = Math.floor((reportDate.getMonth() + 3) / 3);
+
+            await IncomeStatement.upsert({
+              symbol,
+              period_type: 'Quarterly',
+              fiscal_year: fiscalYear,
+              fiscal_period: `Q${quarter}`,
+              revenue: stmt.totalRevenue || null,
+              gross_profit: stmt.grossProfit || null,
+              operating_expenses: stmt.totalOperatingExpenses || null,
+              operating_income: stmt.operatingIncome || null,
+              net_income: stmt.netIncome || null,
+              report_date: stmt.endDate,
+              source_api: 'yahoo',
+            });
+          }
+        }
+
+        processed++;
+        logger.debug(`[${i + 1}/${tickers.length}] ✅ Processed ${symbol}`);
+      } catch (err) {
+        errors++;
+        logger.error(`[${i + 1}/${tickers.length}] ❌ Failed ${symbol}: ${err.message}`);
+      }
+
+      // 🛑 SLEEP: 250ms between stocks to avoid rate limits
+      await sleep(250);
     }
 
     logger.info(`=== Yahoo Worker DONE === ${processed} ok, ${errors} errors in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
