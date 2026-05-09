@@ -89,12 +89,27 @@ app.use((err, req, res, _next) => {
 });
 
 // ============================================
-// Start
+// Start — sync Sequelize then listen
 // ============================================
-app.listen(PORT, () => {
-  logger.info(`ScanNasYork API server running on port ${PORT}`);
-  logger.info(`Frontend: http://localhost:${PORT}`);
-  logger.info(`API Base: http://localhost:${PORT}/api/v1`);
-});
+const { sequelize } = require('../models');
+
+(async () => {
+  try {
+    await sequelize.authenticate();
+    logger.info('Database connection established');
+    await sequelize.sync(); // Creates tables if they don't exist
+    logger.info('Models synchronized');
+  } catch (err) {
+    logger.error('Database connection failed', { error: err.message });
+    logger.warn('Server starting without database — API calls will fail');
+  }
+
+  app.listen(PORT, () => {
+    logger.info(`ScanNasYork API server running on port ${PORT}`);
+    logger.info(`Frontend: http://localhost:${PORT}`);
+    logger.info(`API Base: http://localhost:${PORT}/api/v1`);
+  });
+})();
 
 module.exports = app;
+
