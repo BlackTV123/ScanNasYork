@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Stock detail view — technical and fundamental analysis">
+  <title>Stock Detail | ScanNasYork</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/responsive.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
+</head>
+<body>
+
+<div id="loading-overlay" class="loading-overlay"><div class="spinner"></div></div>
+
+<div class="app-container">
+
+  <!-- NAVBAR -->
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <div class="logo-icon">SN</div>
+      <div>
+        <h1>ScanNasYork</h1>
+        <div class="subtitle">Stock Detail</div>
+      </div>
+    </div>
+  </nav>
+
+  <a href="/" class="back-link">← Back to Screener</a>
+
+  <!-- STOCK HEADER -->
+  <div class="stock-header" id="stock-header">
+    <div>
+      <div class="symbol-badge" id="detail-symbol">—</div>
+      <div class="company-name" id="detail-name">Loading...</div>
+      <span class="cell-sector" id="detail-sector" style="margin-top:8px;display:inline-block">—</span>
+    </div>
+    <div class="price-display">
+      <div class="price-value" id="detail-price">—</div>
+      <div class="price-change" id="detail-change">—</div>
+    </div>
+  </div>
+
+  <!-- METRIC CARDS -->
+  <div class="metrics-grid" id="metrics-grid"></div>
+
+  <!-- PRICE CHART -->
+  <div class="chart-panel">
+    <h2 style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:var(--space-md)">30-Day Price & Indicators</h2>
+    <canvas id="price-chart"></canvas>
+  </div>
+
+  <!-- QUARTERLY EARNINGS -->
+  <section class="panel" id="quarterly-panel">
+    <div class="panel-header">
+      <h2>Quarterly Earnings History</h2>
+    </div>
+    <div class="panel-body">
+      <div class="table-container">
+        <table class="data-table" id="quarterly-table">
+          <thead>
+            <tr>
+              <th>Period</th>
+              <th>Revenue</th>
+              <th>EPS</th>
+              <th>Net Income</th>
+              <th>Report Date</th>
+            </tr>
+          </thead>
+          <tbody id="quarterly-body">
+            <tr><td colspan="5" class="text-center" style="padding:24px;color:var(--text-muted)">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div id="toast-container" class="toast-container"></div>
+
+<script src="/js/utils.js"></script>
+<script src="/js/api.js"></script>
+<script>
+(function() {
+  'use strict';
+
+  const params = new URLSearchParams(window.location.search);
+  const symbol = params.get('symbol');
+  if (!symbol) { window.location.href = '/'; return; }
+
+  document.title = `${symbol.toUpperCase()} | ScanNasYork`;
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    const overlay = document.getElementById('loading-overlay');
+    overlay.classList.add('active');
+
+    try {
+      const [detailRes, historyRes] = await Promise.all([
+        getStockDetail(symbol),
+        getStockHistory(symbol, 30),
+      ]);
+
+      if (detailRes.success) renderDetail(detailRes.data);
+      if (historyRes.success) renderChart(historyRes.data);
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      overlay.classList.remove('active');
+    }
+  });
+
+  function renderDetail(data) {
+    document.getElementById('detail-symbol').textContent = data.symbol;
+    document.getElementById('detail-name').textContent = data.company_name || '';
+    document.getElementById('detail-sector').textContent = data.sector || '—';
+
+    const price = data.current_metrics?.price;
+    document.getElementById('detail-price').textContent = formatPrice(price);
+
+    // Metrics cards
+    const m = data.current_metrics || {};
+    const f = data.fundamentals || {};
+    const cards = [
+      { label: 'RSI (14)', value: m.rsi_14 != null ? parseFloat(m.rsi_14).toFixed(1) : '—' },
+      { label: 'MACD', value: m.macd != null ? parseFloat(m.macd).toFixed(4) : '—' },
+      { label: 'SMA 20', value: formatPrice(m.sma_20) },
+      { label: 'SMA 50', value: formatPrice(m.sma_50) },
+      { label: 'SMA 200', value: formatPrice(m.sma_200) },
+      { label: 'Volume', value: formatVolume(m.volume) },
+      { label: 'TTM EPS', value: f.ttm_eps != null ? formatNumber(f.ttm_eps) : '—' },
+      { label: 'TTM Revenue', value: formatLargeNumber(f.ttm_revenue) },
+      { label: 'P/E Ratio', value: f.pe_ratio != null ? formatNumber(f.pe_ratio) : '—' },
+      { label: 'EPS YoY Growth', value: formatPct(f.latest_eps_yoy_growth) },
+      { label: 'Market Cap', value: formatLargeNumber(data.market_cap) },
+      { label: 'ATR (14)', value: m.atr_14 != null ? formatNumber(m.atr_14) : '—' },
+    ];
+
+    document.getElementById('metrics-grid').innerHTML = cards.map(c => `
+      <div class="metric-card">
+        <div class="metric-label">${c.label}</div>
+        <div class="metric-value">${c.value}</div>
+      </div>
+    `).join('');
+
+    // Quarterly table
+    const qBody = document.getElementById('quarterly-body');
+    if (data.quarterly_history && data.quarterly_history.length > 0) {
+      qBody.innerHTML = data.quarterly_history.map(q => `
+        <tr>
+          <td class="cell-symbol">${q.fiscal_period}</td>
+          <td class="cell-number">${formatLargeNumber(q.revenue)}</td>
+          <td class="cell-number">${q.eps != null ? formatNumber(q.eps, 4) : '—'}</td>
+          <td class="cell-number">${formatLargeNumber(q.net_income)}</td>
+          <td>${q.report_date || '—'}</td>
+        </tr>
+      `).join('');
+    } else {
+      qBody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding:24px;color:var(--text-muted)">No quarterly data available</td></tr>';
+    }
+  }
+
+  function renderChart(historyData) {
+    if (!historyData || historyData.length === 0) return;
+
+    const ctx = document.getElementById('price-chart').getContext('2d');
+    const labels = historyData.map(d => d.date);
+    const closes = historyData.map(d => parseFloat(d.close));
+    const sma20 = historyData.map(d => d.sma_20 ? parseFloat(d.sma_20) : null);
+    const sma50 = historyData.map(d => d.sma_50 ? parseFloat(d.sma_50) : null);
+
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Close',
+            data: closes,
+            borderColor: '#6366f1',
+            backgroundColor: 'rgba(99,102,241,0.08)',
+            borderWidth: 2,
+            fill: true,
+            tension: 0.3,
+            pointRadius: 2,
+            pointHoverRadius: 5,
+          },
+          {
+            label: 'SMA 20',
+            data: sma20,
+            borderColor: '#22d3ee',
+            borderWidth: 1.5,
+            borderDash: [5, 3],
+            fill: false,
+            tension: 0.3,
+            pointRadius: 0,
+          },
+          {
+            label: 'SMA 50',
+            data: sma50,
+            borderColor: '#f59e0b',
+            borderWidth: 1.5,
+            borderDash: [5, 3],
+            fill: false,
+            tension: 0.3,
+            pointRadius: 0,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { color: '#94a3b8', font: { family: 'Inter', size: 11 } } },
+          tooltip: {
+            backgroundColor: '#1a1f2e',
+            borderColor: 'rgba(148,163,184,0.15)',
+            borderWidth: 1,
+            titleColor: '#f1f5f9',
+            bodyColor: '#94a3b8',
+            titleFont: { family: 'JetBrains Mono' },
+            bodyFont: { family: 'JetBrains Mono' },
+          },
+        },
+        scales: {
+          x: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: 'rgba(148,163,184,0.06)' } },
+          y: { ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 10 } }, grid: { color: 'rgba(148,163,184,0.06)' } },
+        },
+      },
+    });
+  }
+})();
+</script>
+</body>
+</html>

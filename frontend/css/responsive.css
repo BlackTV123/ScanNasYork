@@ -1,0 +1,94 @@
+/* ============================================
+   ScanNasYork — Responsive Breakpoints
+   ============================================ */
+
+/* Tablet (768px and below) */
+@media (max-width: 768px) {
+  html { font-size: 13px; }
+
+  .app-container { padding: var(--space-md); }
+
+  .navbar {
+    flex-direction: column;
+    gap: var(--space-md);
+    top: 0;
+    border-radius: 0;
+    margin-bottom: var(--space-md);
+    padding: var(--space-md);
+  }
+
+  .navbar-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .filter-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-sm);
+  }
+
+  .filter-actions {
+    flex-wrap: wrap;
+  }
+
+  .results-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .data-table { font-size: 0.78rem; }
+  .data-table th,
+  .data-table td { padding: var(--space-xs) var(--space-sm); }
+
+  .cell-name { max-width: 120px; }
+
+  .metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .stock-header {
+    flex-direction: column;
+  }
+
+  .stock-header .price-display {
+    text-align: left;
+  }
+}
+
+/* Mobile (375px and below) */
+@media (max-width: 480px) {
+  html { font-size: 12px; }
+
+  .app-container { padding: var(--space-sm); }
+
+  .navbar-stat { display: none; }
+
+  .filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .data-table th:nth-child(n+6),
+  .data-table td:nth-child(n+6) {
+    display: none;
+  }
+
+  .metrics-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .pagination {
+    flex-wrap: wrap;
+  }
+
+  .stock-header .symbol-badge { font-size: 1.5rem; }
+  .stock-header .price-value { font-size: 1.5rem; }
+}
+
+/* Large Desktop (1440px+) */
+@media (min-width: 1440px) {
+  html { font-size: 15px; }
+
+  .filter-grid {
+    grid-template-columns: repeat(5, 1fr);
+  }
+}

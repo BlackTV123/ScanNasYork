@@ -1,0 +1,17 @@
+{
+  "name": "scannas-york",
+  "version": "1.0.0",
+  "description": "ScanNasYork Quantamental Stock Screener",
+  "scripts": {
+    "start": "node backend/api/server.js",
+    "dev": "node --watch backend/api/server.js",
+    "worker:technical": "node backend/workers/daily-technical.js",
+    "worker:fundamental": "node backend/workers/fundamental.js",
+    "db:init": "node backend/db/init.js",
+    "db:seed": "node backend/db/seed.js",
+    "install:backend": "cd backend && npm install"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
