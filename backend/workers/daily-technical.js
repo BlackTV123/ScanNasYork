@@ -12,8 +12,9 @@ const { Ticker, DailyMetric } = require('../models');
 const { calculateAll } = require('../utils/indicators');
 const logger = require('../utils/logger');
 
-// Sleep utility to avoid Yahoo IP bans
+// Sleep utility to avoid Yahoo IP bans + Jitter
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const randomJitter = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
 // Helper function to split array into chunks (batches)
 function chunkArray(array, chunkSize) {
@@ -29,8 +30,21 @@ async function runTechnicalWorker() {
   logger.info('=== Yahoo Technical Worker START ===');
 
   try {
-    // 1. Get all tracked symbols from database
-    const tickers = await Ticker.findAll({ attributes: ['symbol'], raw: true });
+    // 1. Checkpointing: Get only symbols that haven't been updated in the last 16 hours
+    const yesterday = new Date();
+    yesterday.setHours(yesterday.getHours() - 16);
+    
+    const { Op } = require('sequelize');
+    const tickers = await Ticker.findAll({ 
+      attributes: ['symbol'], 
+      where: {
+        [Op.or]: [
+          { last_technical_update: { [Op.lt]: yesterday } },
+          { last_technical_update: null }
+        ]
+      },
+      raw: true 
+    });
     logger.info(`Loaded ${tickers.length} tickers to process.`);
 
     // Date range for historical data (e.g. last 300 days)
@@ -38,19 +52,19 @@ async function runTechnicalWorker() {
     period1.setDate(period1.getDate() - 300);
     const queryOptions = { period1: period1.toISOString().split('T')[0] };
 
-    // 2. Split symbols into batches of 3
-    const batches = chunkArray(tickers, 3);
+    // 2. Split symbols into batches of 5 (Smart Batching)
+    const batches = chunkArray(tickers, 5);
     let processed = 0, errors = 0;
 
     for (let i = 0; i < batches.length; i++) {
       const batch = batches[i];
-      
-      // Process 3 stocks concurrently
+
+      // Process 5 stocks concurrently
       const fetchPromises = batch.map(async (t) => {
         const symbol = t.symbol;
         try {
           const result = await yf.chart(symbol, queryOptions);
-          
+
           if (!result || !result.quotes || result.quotes.length === 0) {
             throw new Error('No historical data found');
           }
@@ -95,13 +109,14 @@ async function runTechnicalWorker() {
         }
       });
 
-      // Wait for all 3 stocks to finish
+      // Wait for all 5 stocks to finish
       await Promise.all(fetchPromises);
-      
+
       logger.info(`Completed batch ${i + 1}/${batches.length} (${processed} ok, ${errors} err)`);
 
-      // 🛑 SLEEP: 2 seconds between batches to keep Yahoo happy!
-      await sleep(2000);
+      // 🛑 JITTER SLEEP: Random sleep between 1.5s to 3.5s to look human
+      const jitterMs = randomJitter(1500, 3500);
+      await sleep(jitterMs);
     }
 
     logger.info(`=== Yahoo Worker DONE === ${processed} ok, ${errors} errors in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);

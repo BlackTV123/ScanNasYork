@@ -11,8 +11,9 @@ const yf = new YahooFinance({ suppressNotices: ['yahooSurvey', 'ripHistorical'] 
 const { Ticker, IncomeStatement } = require('../models');
 const logger = require('../utils/logger');
 
-// Sleep utility to avoid Yahoo IP bans
+// Sleep utility to avoid Yahoo IP bans + Jitter
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const randomJitter = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
 // Helper function to split array into chunks (batches)
 function chunkArray(array, chunkSize) {
@@ -28,18 +29,32 @@ async function runFundamentalWorker() {
   logger.info('=== Yahoo Fundamental Worker START ===');
 
   try {
-    // 1. Get all tracked symbols from database
-    const tickers = await Ticker.findAll({ attributes: ['symbol'], raw: true });
+    // 1. Checkpointing: Frequency Separation (Fundamentals don't change every day)
+    // Only update stocks that haven't been updated in the last 30 days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const { Op } = require('sequelize');
+    const tickers = await Ticker.findAll({ 
+      attributes: ['symbol'], 
+      where: {
+        [Op.or]: [
+          { last_fundamental_update: { [Op.lt]: thirtyDaysAgo } },
+          { last_fundamental_update: null }
+        ]
+      },
+      raw: true 
+    });
     logger.info(`Loaded ${tickers.length} tickers to process.`);
 
-    // 2. Split symbols into batches of 3
-    const batches = chunkArray(tickers, 3);
+    // 2. Split symbols into batches of 5 (Smart Batching)
+    const batches = chunkArray(tickers, 5);
     let processed = 0, errors = 0;
 
     for (let i = 0; i < batches.length; i++) {
       const batch = batches[i];
-      
-      // Process 3 stocks concurrently
+
+      // Process 5 stocks concurrently
       const fetchPromises = batch.map(async (t) => {
         const symbol = t.symbol;
         try {
@@ -54,7 +69,7 @@ async function runFundamentalWorker() {
           }
 
           const fd = summary.financialData || {};
-          
+
           const updateData = {
             market_cap: quote.marketCap || null,
             pe_ratio: quote.trailingPE || null,
@@ -73,7 +88,7 @@ async function runFundamentalWorker() {
             for (let qIdx = 0; qIdx < qs.length; qIdx++) {
               const stmt = qs[qIdx];
               if (!stmt.endDate) continue;
-              
+
               const reportDate = new Date(stmt.endDate);
               const fiscalYear = reportDate.getFullYear();
               // Approximation of quarter
@@ -103,13 +118,14 @@ async function runFundamentalWorker() {
         }
       });
 
-      // Wait for all 3 stocks to finish
+      // Wait for all 5 stocks to finish
       await Promise.all(fetchPromises);
-      
+
       logger.info(`Completed batch ${i + 1}/${batches.length} (${processed} ok, ${errors} err)`);
 
-      // 🛑 SLEEP: 2 seconds between batches to keep Yahoo happy!
-      await sleep(2000);
+      // 🛑 JITTER SLEEP: Random sleep between 2.0s to 4.5s to look human
+      const jitterMs = randomJitter(2000, 4500);
+      await sleep(jitterMs);
     }
 
     logger.info(`=== Yahoo Worker DONE === ${processed} ok, ${errors} errors in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
