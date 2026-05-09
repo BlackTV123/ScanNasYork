@@ -20,7 +20,7 @@ async function runTechnicalWorker() {
   const startTime = Date.now();
   logger.info('=== Daily Technical Worker START ===');
 
-  const { polygon } = createApiClients();
+  const { polygon, alphaVantage } = createApiClients();
 
   try {
     const today = getMarketDate();
@@ -49,7 +49,7 @@ async function runTechnicalWorker() {
 
       await Promise.allSettled(batch.map(async (bar) => {
         try {
-          await processTickerTechnicals(bar.T, today, bar);
+          await processTickerTechnicals(alphaVantage, bar.T, today, bar);
           processed++;
         } catch (err) {
           errors++;
@@ -69,7 +69,7 @@ async function runTechnicalWorker() {
   }
 }
 
-async function processTickerTechnicals(symbol, date, todayBar) {
+async function processTickerTechnicals(alphaVantage, symbol, date, todayBar) {
   // Fetch historical bars from DB
   const historical = await DailyMetric.findAll({
     where: { symbol },
@@ -85,6 +85,30 @@ async function processTickerTechnicals(symbol, date, todayBar) {
   ohlcvBars.push({ o: todayBar.o, h: todayBar.h, l: todayBar.l, c: todayBar.c, v: todayBar.v });
 
   const ind = calculateAll(ohlcvBars);
+
+  // --- ALPHA VANTAGE INTEGRATION ---
+  try {
+    if (process.env.ALPHA_VANTAGE_API_KEY && !process.env.ALPHA_VANTAGE_API_KEY.includes('your_')) {
+      logger.debug(`Fetching RSI & MACD from Alpha Vantage for ${symbol}...`);
+      
+      const rsiData = await alphaVantage.getRSI(symbol);
+      const latestRsiDate = Object.keys(rsiData)[0];
+      if (latestRsiDate && rsiData[latestRsiDate]['RSI']) {
+        ind.rsi_14 = parseFloat(rsiData[latestRsiDate]['RSI']);
+      }
+
+      const macdData = await alphaVantage.getMACD(symbol);
+      const latestMacdDate = Object.keys(macdData)[0];
+      if (latestMacdDate && macdData[latestMacdDate]['MACD']) {
+        ind.macd = parseFloat(macdData[latestMacdDate]['MACD']);
+        ind.macd_signal = parseFloat(macdData[latestMacdDate]['MACD_Signal']);
+        ind.macd_histogram = parseFloat(macdData[latestMacdDate]['MACD_Hist']);
+      }
+    }
+  } catch (err) {
+    logger.warn(`Alpha Vantage API failed for ${symbol}, falling back to local calculation. Error: ${err.message}`);
+  }
+  // ---------------------------------
 
   // Upsert daily metric
   await DailyMetric.upsert({
