@@ -29,21 +29,27 @@ async function runFundamentalWorker() {
 
   try {
     // 1. Checkpointing: Frequency Separation
-    // Only update stocks that haven't been updated in the last 90 days (3 months)
-    const ninetyDaysAgo = new Date();
-    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-    
+    // Only update stocks that haven't been updated in the last 12 hours
+    const twelveHoursAgo = new Date();
+    twelveHoursAgo.setHours(twelveHoursAgo.getHours() - 12);
+
     const { Op } = require('sequelize');
-    const tickers = await Ticker.findAll({ 
-      attributes: ['symbol'], 
-      where: {
+    const isForce = process.argv.includes('--force');
+
+    const queryOptions = { attributes: ['symbol'], raw: true };
+    if (!isForce) {
+      queryOptions.where = {
         [Op.or]: [
-          { last_fundamental_update: { [Op.lt]: ninetyDaysAgo } },
+          { last_fundamental_update: { [Op.lt]: twelveHoursAgo } },
           { last_fundamental_update: null }
         ]
-      },
-      raw: true 
-    });
+      };
+      logger.info('Checkpointing active: Only fetching stocks older than 12h.');
+    } else {
+      logger.info('FORCE mode: Fetching all stocks regardless of last update.');
+    }
+
+    const tickers = await Ticker.findAll(queryOptions);
     logger.info(`Loaded ${tickers.length} tickers to process.`);
 
     // 2. Smart Batching: Process 10 at a time
@@ -52,14 +58,14 @@ async function runFundamentalWorker() {
 
     for (let i = 0; i < batches.length; i++) {
       const batch = batches[i];
-      
+
       const fetchPromises = batch.map(async (t) => {
         const symbol = t.symbol;
         try {
           // Fetch quote and summary from Yahoo
           const [quote, summary] = await Promise.all([
             yf.quote(symbol).catch(() => null),
-            yf.quoteSummary(symbol, { modules: ['financialData', 'incomeStatementHistoryQuarterly'] }).catch(() => null)
+            yf.quoteSummary(symbol, { modules: ['financialData', 'incomeStatementHistoryQuarterly', 'assetProfile'] }).catch(() => null)
           ]);
 
           if (!quote || !summary) {
@@ -67,8 +73,11 @@ async function runFundamentalWorker() {
           }
 
           const fd = summary.financialData || {};
-          
+          const profile = summary.assetProfile || {};
+
           const updateData = {
+            sector: profile.sector || null,
+            industry: profile.industry || null,
             market_cap: quote.marketCap || null,
             pe_ratio: quote.trailingPE || null,
             ttm_eps: quote.epsTrailingTwelveMonths || null,
@@ -86,7 +95,7 @@ async function runFundamentalWorker() {
             for (let qIdx = 0; qIdx < qs.length; qIdx++) {
               const stmt = qs[qIdx];
               if (!stmt.endDate) continue;
-              
+
               const reportDate = new Date(stmt.endDate);
               const fiscalYear = reportDate.getFullYear();
               // Approximation of quarter

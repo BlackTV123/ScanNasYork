@@ -1,19 +1,19 @@
 # ScanNasYork — Quantamental Stock Screener
 
-A high-performance, web-based stock screener capable of analyzing 6,000+ equities across NYSE and NASDAQ using both technical (RSI, MACD, SMA) and fundamental (EPS, Revenue, P/E) metrics.
+A high-performance, web-based stock screener designed for Nasdaq-listed equities. Analyzes 5,000+ symbols using both technical (RSI, MACD) and fundamental (EPS, Revenue, P/E, Sector) metrics.
 
 ## Quick Start
 
 ### Prerequisites
 - Node.js 18+ LTS
 - PostgreSQL 13+
-- API Keys: [Polygon.io](https://polygon.io), [Financial Modeling Prep](https://financialmodelingprep.com)
+- (Optional) Polygon.io API Key for initial symbol discovery
 
 ### 1. Setup Environment
 ```bash
 cd backend
 cp .env.example .env
-# Edit .env with your database credentials and API keys
+# Edit .env with your database credentials
 ```
 
 ### 2. Install Dependencies
@@ -26,16 +26,13 @@ npm install
 ```bash
 # Create the database first in PostgreSQL:
 # CREATE DATABASE scannas_york;
-
 npm run db:init
 ```
 
-### 4. Seed Data
+### 4. Seed Data (Nasdaq Symbols)
 ```bash
-# Option A: Seed with demo data (no API keys needed)
-npm run db:seed -- --demo
-
-# Option B: Seed from Polygon.io API (requires API key)
+# Seed symbols from Polygon.io API (requires API key)
+# This will fetch all Nasdaq (XNAS) tickers
 npm run db:seed
 ```
 
@@ -43,17 +40,40 @@ npm run db:seed
 ```bash
 npm run dev
 ```
-
 Open **http://localhost:3000** in your browser.
 
-### 6. Run Workers (Production)
-```bash
-# Daily technical data (5 PM EST)
-npm run worker:technical -- --cron
+---
 
-# Fundamental data (8 PM EST)
+## 🚀 Data Processing (Workers)
+
+The screener uses a high-performance **Yahoo Finance** scraping engine. It is **100% free** and requires no API keys for technical or fundamental updates.
+
+### Run Full Update (Recommended)
+This runs technical analysis followed by fundamental updates for all stocks.
+```bash
+npm run update:all
+```
+
+### Optimized Performance
+- **Smart Batching:** Processes stocks in batches of 10 with a 1-second breather.
+- **Checkpointing:** Automatically skips stocks updated in the last 12 hours to save resources.
+- **Force Update:** Bypass checkpoints and refresh everything immediately:
+  ```bash
+  npm run update:all -- --force
+  ```
+
+### Individual Workers
+```bash
+# Run once
+npm run worker:technical
+npm run worker:fundamental
+
+# Run on schedule (Cron)
+npm run worker:technical -- --cron
 npm run worker:fundamental -- --cron
 ```
+
+---
 
 ## Architecture
 
@@ -79,12 +99,12 @@ npm run worker:fundamental -- --cron
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/v1/stocks/screen` | Multi-criteria screening |
-| GET | `/api/v1/stocks/sectors` | Available sectors |
-| GET | `/api/v1/stocks/:symbol` | Stock detail |
-| GET | `/api/v1/stocks/:symbol/history` | Price history |
+| GET | `/api/v1/stocks/sectors` | Available sectors list |
+| GET | `/api/v1/stocks/:symbol` | Stock detail & indicators |
+| GET | `/api/v1/stocks/:symbol/history` | Price history (Daily) |
 | GET | `/api/health` | Health check |
 
 ## Tech Stack
-- **Backend:** Node.js, Express, PostgreSQL, Winston, Joi
+- **Backend:** Node.js, Sequelize ORM, PostgreSQL
 - **Frontend:** Vanilla HTML/CSS/JS, Chart.js
-- **Data:** Polygon.io, Financial Modeling Prep, Alpha Vantage (backup)
+- **Data:** Yahoo Finance (Technical/Fundamental), Polygon.io (Reference)

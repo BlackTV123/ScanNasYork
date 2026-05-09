@@ -61,17 +61,11 @@ async function screenStocks(req, res) {
     const offset = parseInt(f.offset, 10) || 0;
 
     // Sort mapping
-    const sortMap = {
-      symbol: ['symbol', f.sort_order || 'ASC'],
-      company_name: ['company_name', f.sort_order || 'ASC'],
-      current_price: ['current_price', f.sort_order || 'ASC'],
-      ttm_eps: ['ttm_eps', f.sort_order || 'ASC'],
-      ttm_revenue: ['ttm_revenue', f.sort_order || 'ASC'],
-      pe_ratio: ['pe_ratio', f.sort_order || 'ASC'],
-      latest_eps_yoy_growth: ['latest_eps_yoy_growth', f.sort_order || 'ASC'],
-      market_cap: ['market_cap', f.sort_order || 'ASC'],
-    };
-    const order = [sortMap[f.sort_by] || ['symbol', 'ASC']];
+    const sort_by = f.sort_by || 'symbol';
+    const sort_order = f.sort_order || 'ASC';
+
+    // We use Sequelize.literal to force NULLS LAST behavior in PostgreSQL
+    const order = [sequelize.literal(`"${sort_by}" ${sort_order} NULLS LAST`)];
 
     // For technical filters, we need a subquery approach
     // First get symbols matching metric filters, then filter tickers
@@ -276,15 +270,15 @@ async function getStockHistory(req, res) {
 // ════════════════════════════════════
 async function getSectors(req, res) {
   try {
-    const result = await Ticker.findAll({
+    const sectors = await Ticker.findAll({
       attributes: [[fn('DISTINCT', col('sector')), 'sector']],
-      where: { sector: { [Op.not]: null } },
+      where: { sector: { [Op.ne]: null } },
       order: [['sector', 'ASC']],
-      raw: true,
+      raw: true
     });
-    res.json({ success: true, data: result.map(r => r.sector) });
+    res.json({ success: true, data: sectors.map(s => s.sector) });
   } catch (err) {
-    logger.error('Sectors query failed', { error: err.message });
+    logger.error('Failed to fetch sectors', err);
     res.status(500).json({ success: false, error: 'Internal server error' });
   }
 }

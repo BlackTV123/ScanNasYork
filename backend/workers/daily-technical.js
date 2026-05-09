@@ -29,27 +29,33 @@ async function runTechnicalWorker() {
   logger.info('=== Yahoo Technical Worker START ===');
 
   try {
-    // 1. Checkpointing: Get only symbols that haven't been updated in the last 16 hours
-    const yesterday = new Date();
-    yesterday.setHours(yesterday.getHours() - 16);
-    
+    // 1. Checkpointing: Get only symbols that haven't been updated in the last 12 hours
+    const twelveHoursAgo = new Date();
+    twelveHoursAgo.setHours(twelveHoursAgo.getHours() - 12);
+
     const { Op } = require('sequelize');
-    const tickers = await Ticker.findAll({ 
-      attributes: ['symbol'], 
-      where: {
+    const isForce = process.argv.includes('--force');
+
+    const queryOptions = { attributes: ['symbol'], raw: true };
+    if (!isForce) {
+      queryOptions.where = {
         [Op.or]: [
-          { last_technical_update: { [Op.lt]: yesterday } },
+          { last_technical_update: { [Op.lt]: twelveHoursAgo } },
           { last_technical_update: null }
         ]
-      },
-      raw: true 
-    });
+      };
+      logger.info('Checkpointing active: Only fetching stocks needing update (older than 12h).');
+    } else {
+      logger.info('FORCE mode: Fetching all stocks regardless of last update.');
+    }
+
+    const tickers = await Ticker.findAll(queryOptions);
     logger.info(`Loaded ${tickers.length} tickers to process.`);
 
     // Date range for historical data (e.g. last 300 days)
     const period1 = new Date();
     period1.setDate(period1.getDate() - 300);
-    const queryOptions = { period1: period1.toISOString().split('T')[0] };
+    const yahooOptions = { period1: period1.toISOString().split('T')[0] };
 
     // 2. Smart Batching: Process 10 at a time
     const batches = chunkArray(tickers, 10);
@@ -57,12 +63,12 @@ async function runTechnicalWorker() {
 
     for (let i = 0; i < batches.length; i++) {
       const batch = batches[i];
-      
+
       const fetchPromises = batch.map(async (t) => {
         const symbol = t.symbol;
         try {
-          const result = await yf.chart(symbol, queryOptions);
-          
+          const result = await yf.chart(symbol, yahooOptions);
+
           if (!result || !result.quotes || result.quotes.length === 0) {
             throw new Error('No historical data found');
           }
