@@ -62,6 +62,9 @@ const Ticker = sequelize.define('Ticker', {
   last_fundamental_update: {
     type: DataTypes.DATE,
   },
+  last_sec_update: {
+    type: DataTypes.DATE,
+  },
 }, {
   tableName: 'tickers',
   indexes: [

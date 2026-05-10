@@ -51,24 +51,24 @@
     <canvas id="price-chart"></canvas>
   </div>
 
-  <!-- QUARTERLY EARNINGS -->
-  <section class="panel" id="quarterly-panel">
+  <!-- ANNUAL & QUARTERLY EARNINGS -->
+  <section class="panel" id="earnings-panel">
     <div class="panel-header">
-      <h2>Quarterly Earnings History</h2>
+      <h2>Revenue & Earnings History</h2>
     </div>
     <div class="panel-body">
       <div class="table-container">
-        <table class="data-table" id="quarterly-table">
+        <table class="data-table earnings-table" id="earnings-table">
           <thead>
             <tr>
-              <th>Period</th>
-              <th>Revenue</th>
-              <th>EPS</th>
-              <th>Net Income</th>
-              <th>Report Date</th>
+              <th style="text-align:left;width:160px">Period</th>
+              <th style="text-align:right">Revenue</th>
+              <th style="text-align:right">EPS</th>
+              <th style="text-align:right">Net Income</th>
+              <th style="text-align:right;width:120px">Report Date</th>
             </tr>
           </thead>
-          <tbody id="quarterly-body">
+          <tbody id="earnings-body">
             <tr><td colspan="5" class="text-center" style="padding:24px;color:var(--text-muted)">Loading...</td></tr>
           </tbody>
         </table>
@@ -79,6 +79,42 @@
 </div>
 
 <div id="toast-container" class="toast-container"></div>
+
+<style>
+  /* Earnings table alignment fixes */
+  .earnings-table th,
+  .earnings-table td {
+    font-variant-numeric: tabular-nums;
+  }
+  .earnings-table .row-annual {
+    background: rgba(99, 102, 241, 0.08);
+    border-top: 2px solid var(--border-default);
+  }
+  .earnings-table .row-annual td {
+    font-weight: 700;
+    padding-top: var(--space-md);
+    padding-bottom: var(--space-md);
+  }
+  .earnings-table .row-annual .cell-period {
+    font-size: 0.9rem;
+    color: var(--text-accent);
+  }
+  .earnings-table .row-quarter td {
+    padding-left: var(--space-lg);
+    color: var(--text-secondary);
+  }
+  .earnings-table .row-quarter .cell-period {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    padding-left: 28px;
+  }
+  .earnings-table .cell-number {
+    text-align: right;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    min-width: 100px;
+  }
+</style>
 
 <script src="/js/utils.js"></script>
 <script src="/js/api.js"></script>
@@ -141,21 +177,79 @@
       </div>
     `).join('');
 
-    // Quarterly table
-    const qBody = document.getElementById('quarterly-body');
-    if (data.quarterly_history && data.quarterly_history.length > 0) {
-      qBody.innerHTML = data.quarterly_history.map(q => `
-        <tr>
-          <td class="cell-symbol">${q.fiscal_period}</td>
+    // Earnings table — Annual rows with quarterly breakdowns
+    renderEarningsTable(data.annual_history || [], data.quarterly_history || []);
+  }
+
+  function renderEarningsTable(annualData, quarterlyData) {
+    const tbody = document.getElementById('earnings-body');
+
+    if (annualData.length === 0 && quarterlyData.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding:24px;color:var(--text-muted)">No earnings data available</td></tr>';
+      return;
+    }
+
+    // 1. Group data by year
+    const annualByYear = {};
+    for (const a of annualData) annualByYear[a.fiscal_year] = a;
+
+    const quartersByYear = {};
+    for (const q of quarterlyData) {
+      const yr = q.fiscal_year;
+      if (!quartersByYear[yr]) quartersByYear[yr] = [];
+      quartersByYear[yr].push(q);
+    }
+
+    // 2. Get unique years from both sources and sort descending
+    const allYears = Array.from(new Set([
+      ...Object.keys(annualByYear).map(Number),
+      ...Object.keys(quartersByYear).map(Number)
+    ])).sort((a, b) => b - a);
+
+    // 3. Generate HTML
+    let html = '';
+    for (const yr of allYears) {
+      const annual = annualByYear[yr];
+      const quarters = quartersByYear[yr] || [];
+
+      // Annual summary row (if exists for this year)
+      if (annual) {
+        html += `
+          <tr class="row-annual">
+            <td class="cell-period">📅 FY ${yr}</td>
+            <td class="cell-number">${formatLargeNumber(annual.revenue)}</td>
+            <td class="cell-number">${annual.eps != null ? formatNumber(annual.eps, 4) : '—'}</td>
+            <td class="cell-number">${formatLargeNumber(annual.net_income)}</td>
+            <td class="cell-number" style="font-size:0.75rem">${annual.report_date || '—'}</td>
+          </tr>`;
+      } else {
+        // Placeholder row for years with only quarterly data
+        html += `
+          <tr class="row-annual">
+            <td class="cell-period">📅 FY ${yr}</td>
+            <td class="cell-number" style="color:var(--text-muted)">—</td>
+            <td class="cell-number" style="color:var(--text-muted)">—</td>
+            <td class="cell-number" style="color:var(--text-muted)">—</td>
+            <td class="cell-number" style="color:var(--text-muted)">—</td>
+          </tr>`;
+      }
+
+      // Quarterly rows for this year (Sorted descending by period)
+      // Note: Backend already sorts them DESC, but we'll be safe
+      quarters.sort((a, b) => b.fiscal_period.localeCompare(a.fiscal_period));
+      for (const q of quarters) {
+        html += `
+        <tr class="row-quarter">
+          <td class="cell-period">${q.fiscal_period}</td>
           <td class="cell-number">${formatLargeNumber(q.revenue)}</td>
           <td class="cell-number">${q.eps != null ? formatNumber(q.eps, 4) : '—'}</td>
           <td class="cell-number">${formatLargeNumber(q.net_income)}</td>
-          <td>${q.report_date || '—'}</td>
-        </tr>
-      `).join('');
-    } else {
-      qBody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding:24px;color:var(--text-muted)">No quarterly data available</td></tr>';
+          <td class="cell-number" style="font-size:0.75rem">${q.report_date || '—'}</td>
+        </tr>`;
+      }
     }
+
+    tbody.innerHTML = html;
   }
 
   function renderChart(historyData) {
@@ -217,3 +311,4 @@
 </script>
 </body>
 </html>
+

@@ -65,8 +65,6 @@
             <span style="font-size:0.75rem;color:var(--text-muted)">Only Bullish</span>
           </div>
         </div>
-          </div>
-        </div>
       </div>
     </div>
   </section>
@@ -98,12 +96,6 @@
         <div class="filter-group">
           <label for="filter-pe-max">P/E Ratio Max</label>
           <input type="number" id="filter-pe-max" placeholder="e.g. 30" step="1">
-        </div>
-        <div class="filter-group">
-          <label for="filter-sector">Sector</label>
-          <select id="filter-sector">
-            <option value="">All Sectors</option>
-          </select>
         </div>
         <div class="filter-group">
           <label for="filter-growth-min">EPS YoY Growth Min (%)</label>
@@ -147,16 +139,16 @@
           <th data-sort="symbol" class="sorted">Symbol <span class="sort-icon">▲</span></th>
           <th data-sort="company_name">Company <span class="sort-icon">▲</span></th>
           <th>Sector</th>
-          <th data-sort="current_price">Price <span class="sort-icon">▲</span></th>
-          <th>Chg%</th>
-          <th data-sort="rsi_14">RSI <span class="sort-icon">▲</span></th>
-          <th data-sort="macd">MACD <span class="sort-icon">▲</span></th>
-          <th data-sort="ttm_eps">EPS <span class="sort-icon">▲</span></th>
-          <th data-sort="ttm_revenue">Revenue <span class="sort-icon">▲</span></th>
-          <th data-sort="pe_ratio">P/E <span class="sort-icon">▲</span></th>
-          <th data-sort="market_cap">Market Cap <span class="sort-icon">▲</span></th>
-          <th data-sort="latest_eps_yoy_growth">YoY% <span class="sort-icon">▲</span></th>
-          <th>Volume</th>
+          <th data-sort="current_price" style="text-align:right">Price <span class="sort-icon">▲</span></th>
+          <th style="text-align:right">Chg%</th>
+          <th data-sort="rsi_14" style="text-align:right">RSI <span class="sort-icon">▲</span></th>
+          <th data-sort="macd" style="text-align:right">MACD <span class="sort-icon">▲</span></th>
+          <th data-sort="ttm_eps" style="text-align:right">EPS <span class="sort-icon">▲</span></th>
+          <th data-sort="ttm_revenue" style="text-align:right">Revenue <span class="sort-icon">▲</span></th>
+          <th data-sort="pe_ratio" style="text-align:right">P/E <span class="sort-icon">▲</span></th>
+          <th data-sort="market_cap" style="text-align:right">Market Cap <span class="sort-icon">▲</span></th>
+          <th data-sort="latest_eps_yoy_growth" style="text-align:right">YoY% <span class="sort-icon">▲</span></th>
+          <th style="text-align:right">Volume</th>
         </tr>
       </thead>
       <tbody id="results-body">

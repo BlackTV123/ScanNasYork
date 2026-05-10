@@ -258,7 +258,7 @@ a:hover { color: var(--accent-primary-hover); }
 .panel-body {
   overflow: hidden;
   transition: max-height var(--transition-slow), opacity var(--transition-base);
-  max-height: 600px;
+  max-height: 3000px;
   opacity: 1;
 }
 
@@ -519,6 +519,7 @@ a:hover { color: var(--accent-primary-hover); }
   font-family: var(--font-mono);
   text-align: right;
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 .cell-positive { color: var(--color-bullish); }

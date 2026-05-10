@@ -46,7 +46,17 @@ Open **http://localhost:3000** in your browser.
 
 ## 🚀 Data Processing (Workers)
 
-The screener uses a high-performance **Yahoo Finance** scraping engine. It is **100% free** and requires no API keys for technical or fundamental updates.
+The screener uses a hybrid high-performance scraping engine that is **100% free** and requires no paid API keys for updates:
+
+1. **Yahoo Finance:** Used for daily technical data, market cap, P/E ratios, and current EPS.
+2. **SEC EDGAR API:** Used for deep historical fundamental data (5-10 years of Revenue, Net Income, and EPS).
+
+### SEC EDGAR API Integration
+To comply with strict US Securities and Exchange Commission (SEC) regulations, the fundamental worker implements:
+- **User-Agent Compliance:** Custom headers (`ScanNasYork_Project [email]`) to prevent IP bans.
+- **CIK Mapping:** Translates standard tickers (AAPL) into SEC 10-digit Central Index Keys (0000320193).
+- **Strict Rate Limiting:** Enforces a sleep timer of 150ms between requests to stay well below the maximum 10 requests/second limit.
+- **Smart Filtering:** Parses complex `companyfacts` JSON to differentiate between 3-month quarterly periods and 12-month annual periods.
 
 ### Run Full Update (Recommended)
 This runs technical analysis followed by fundamental updates for all stocks.
@@ -55,7 +65,7 @@ npm run update:all
 ```
 
 ### Optimized Performance
-- **Smart Batching:** Processes stocks in batches of 10 with a 1-second breather.
+- **Smart Batching:** Processes stocks in batches of 5 (Fundamentals) or 10 (Technicals) with breather delays to respect API limits.
 - **Checkpointing:** Automatically skips stocks updated in the last 12 hours to save resources.
 - **Force Update:** Bypass checkpoints and refresh everything immediately:
   ```bash
@@ -107,4 +117,4 @@ npm run worker:fundamental -- --cron
 ## Tech Stack
 - **Backend:** Node.js, Sequelize ORM, PostgreSQL
 - **Frontend:** Vanilla HTML/CSS/JS, Chart.js
-- **Data:** Yahoo Finance (Technical/Fundamental), Polygon.io (Reference)
+- **Data:** Yahoo Finance (Technical/Fundamental), SEC EDGAR (Historical Fundamentals), Polygon.io (Reference)

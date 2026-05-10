@@ -184,13 +184,19 @@ async function getStockDetail(req, res) {
   try {
     const symbol = req.params.symbol.toUpperCase();
 
-    const [ticker, latestMetric, quarterly] = await Promise.all([
+    const [ticker, latestMetric, quarterly, annual] = await Promise.all([
       Ticker.findOne({ where: { symbol }, raw: true }),
       DailyMetric.findOne({ where: { symbol }, order: [['date', 'DESC']], raw: true }),
       IncomeStatement.findAll({
         where: { symbol, period_type: 'Quarterly' },
         order: [['fiscal_year', 'DESC'], ['fiscal_period', 'DESC']],
-        limit: 12,
+        limit: 20,
+        raw: true,
+      }),
+      IncomeStatement.findAll({
+        where: { symbol, period_type: 'Annual' },
+        order: [['fiscal_year', 'DESC']],
+        limit: 5,
         raw: true,
       }),
     ]);
@@ -228,7 +234,16 @@ async function getStockDetail(req, res) {
           pe_ratio: ticker.pe_ratio,
           latest_eps_yoy_growth: ticker.latest_eps_yoy_growth,
         },
+        annual_history: annual.map(a => ({
+          fiscal_year: a.fiscal_year,
+          fiscal_period: a.fiscal_period,
+          revenue: a.revenue,
+          eps: a.eps,
+          net_income: a.net_income,
+          report_date: a.report_date,
+        })),
         quarterly_history: quarterly.map(q => ({
+          fiscal_year: q.fiscal_year,
           fiscal_period: `${q.fiscal_period} ${q.fiscal_year}`,
           revenue: q.revenue,
           eps: q.eps,

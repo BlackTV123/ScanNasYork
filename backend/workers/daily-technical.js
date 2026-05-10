@@ -115,9 +115,7 @@ async function runTechnicalWorker() {
           logger.debug(`✅ Processed ${symbol}`);
         } catch (err) {
           errors++;
-          // Even if it fails, update the timestamp so we don't infinitely retry broken tickers
-          await Ticker.update({ last_technical_update: new Date() }, { where: { symbol } });
-          logger.warn(`⚠️ Skipped ${symbol}: ${err.message}`);
+          logger.warn(`⚠️ Failed ${symbol}: ${err.message}`);
         }
       });
 
@@ -134,12 +132,14 @@ async function runTechnicalWorker() {
   }
 }
 
-if (process.argv.includes('--cron')) {
-  const schedule = process.env.TECHNICAL_WORKER_CRON || '0 17 * * 1-5';
-  logger.info(`Yahoo Technical worker scheduled: ${schedule}`);
-  cron.schedule(schedule, runTechnicalWorker, { timezone: 'America/New_York' });
-} else {
-  runTechnicalWorker().then(() => process.exit(0)).catch(() => process.exit(1));
+if (require.main === module) {
+  if (process.argv.includes('--cron')) {
+    const schedule = process.env.TECHNICAL_WORKER_CRON || '0 17 * * 1-5';
+    logger.info(`Yahoo Technical worker scheduled: ${schedule}`);
+    cron.schedule(schedule, runTechnicalWorker, { timezone: 'America/New_York' });
+  } else {
+    runTechnicalWorker().then(() => process.exit(0)).catch(() => process.exit(1));
+  }
 }
 
 module.exports = { runTechnicalWorker };
