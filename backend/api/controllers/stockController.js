@@ -303,4 +303,58 @@ async function getSectors(req, res) {
   }
 }
 
-module.exports = { screenStocks, getStockDetail, getStockHistory, getSectors };
+/**
+ * GET /stocks/:symbol/financial-chart
+ * Mega Prompt Version: Actual Only, Chronological Sorting, Zero Data Loss
+ */
+async function getFinancialChartData(req, res) {
+  try {
+    const symbol = req.params.symbol.toUpperCase();
+    
+    // Fetch both Annual and Quarterly data
+    const [quarterly, annual] = await Promise.all([
+      IncomeStatement.findAll({
+        where: { symbol, period_type: 'Quarterly' },
+        order: [['fiscal_year', 'ASC'], ['fiscal_period', 'ASC']],
+        raw: true,
+      }),
+      IncomeStatement.findAll({
+        where: { symbol, period_type: 'Annual' },
+        order: [['fiscal_year', 'ASC']],
+        raw: true,
+      }),
+    ]);
+
+    // Zero Data Loss Logic: Mapping and Sorting (Oldest to Newest)
+    const quarterlyData = quarterly.map(q => ({
+      period: `${q.fiscal_period} ${q.fiscal_year}`,
+      revenue: q.revenue !== null ? parseFloat(q.revenue) : null,
+      eps: q.eps !== null ? parseFloat(q.eps) : null,
+      sortKey: `${q.fiscal_year}-${q.fiscal_period}`
+    }));
+
+    const annualData = annual.map(a => ({
+      period: `${a.fiscal_year}`,
+      revenue: a.revenue !== null ? parseFloat(a.revenue) : null,
+      eps: a.eps !== null ? parseFloat(a.eps) : null,
+      sortKey: `${a.fiscal_year}`
+    }));
+
+    // Log array lengths for debug as requested
+    console.log(`[DEBUG] Financial Chart Data for ${symbol}: Quarterly=${quarterlyData.length}, Annual=${annualData.length}`);
+
+    res.json({
+      success: true,
+      symbol,
+      data: {
+        quarterly: quarterlyData,
+        annual: annualData
+      }
+    });
+  } catch (err) {
+    logger.error('Financial chart API failed', { error: err.message, symbol: req.params.symbol });
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+}
+
+module.exports = { screenStocks, getStockDetail, getStockHistory, getSectors, getFinancialChartData };

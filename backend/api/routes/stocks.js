@@ -29,10 +29,13 @@ router.get('/sectors', controller.getSectors);
 // GET /api/v1/stocks/screen
 router.get('/screen', validate(screenQuerySchema), controller.screenStocks);
 
-// GET /api/v1/stocks/:symbol
-router.get('/:symbol', validate(symbolParamSchema, 'params'), controller.getStockDetail);
-
 // GET /api/v1/stocks/:symbol/history
 router.get('/:symbol/history', validate(symbolParamSchema, 'params'), controller.getStockHistory);
+
+// GET /api/v1/stocks/:symbol/financial-chart (Mega Prompt Version)
+router.get('/:symbol/financial-chart', validate(symbolParamSchema, 'params'), controller.getFinancialChartData);
+
+// GET /api/v1/stocks/:symbol
+router.get('/:symbol', validate(symbolParamSchema, 'params'), controller.getStockDetail);
 
 module.exports = router;

@@ -51,6 +51,28 @@
     <canvas id="price-chart"></canvas>
   </div>
 
+  <!-- FINANCIAL PERFORMANCE CHART (Spec Version) -->
+  <section class="panel mb-4" id="financial-performance-panel">
+    <div class="panel-header d-flex-between">
+      <h2>Financial Performance</h2>
+      <div class="chart-controls">
+        <div class="toggle-group">
+          <button id="fp-btn-revenue" class="active" onclick="switchFinMetric('revenue')">Revenue</button>
+          <button id="fp-btn-eps" onclick="switchFinMetric('eps')">EPS</button>
+        </div>
+        <div class="toggle-group">
+          <button id="fp-btn-quarterly" class="active" onclick="switchFinPeriod('quarterly')">Quarterly</button>
+          <button id="fp-btn-annual" onclick="switchFinPeriod('annual')">Annual</button>
+        </div>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div style="height: 350px; position: relative;">
+        <canvas id="fin-perf-chart"></canvas>
+      </div>
+    </div>
+  </section>
+
   <!-- ANNUAL & QUARTERLY EARNINGS -->
   <section class="panel" id="earnings-panel">
     <div class="panel-header">
@@ -114,6 +136,38 @@
     font-variant-numeric: tabular-nums;
     min-width: 100px;
   }
+  /* Financial Chart Styles */
+  .d-flex-between { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+  .chart-controls { display: flex; gap: 12px; }
+  .toggle-group {
+    display: flex;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 3px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .toggle-group button {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    z-index: 10;
+  }
+  .toggle-group button:hover {
+    color: white;
+    background: rgba(255, 255, 255, 0.1);
+  }
+  .toggle-group button.active {
+    background: var(--primary-default);
+    color: white;
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+  }
 </style>
 
 <script src="/js/utils.js"></script>
@@ -133,12 +187,25 @@
     overlay.classList.add('active');
 
     try {
-      const [detailRes, historyRes] = await Promise.all([
+      const [detailRes, historyRes, financialRes] = await Promise.all([
         getStockDetail(symbol),
         getStockHistory(symbol, 30),
+        fetch(`/api/v1/stocks/${symbol}/financial-chart`).then(r => r.json())
       ]);
 
-      if (detailRes.success) renderDetail(detailRes.data);
+      if (detailRes.success) {
+        renderDetail(detailRes.data);
+        // Prepare data for financial chart as per spec
+        const history = detailRes.data.income_history || [];
+        window._annualData = history.filter(i => i.period_type === 'Annual').sort((a, b) => a.fiscal_year - b.fiscal_year);
+        window._quarterlyData = history.filter(i => i.period_type === 'Quarterly').sort((a, b) => {
+            if (a.fiscal_year !== b.fiscal_year) return a.fiscal_year - b.fiscal_year;
+            return a.fiscal_period.localeCompare(b.fiscal_period);
+        });
+        window._fpMetric = 'revenue';
+        window._fpPeriod = 'quarterly';
+        renderFinancialChart();
+      }
       if (historyRes.success) renderChart(historyRes.data);
     } catch (err) {
       showToast(err.message, 'error');
@@ -250,6 +317,94 @@
     }
 
     tbody.innerHTML = html;
+  }
+
+  // Financial Performance Chart Logic (Spec Version)
+  window._annualData = [];
+  window._quarterlyData = [];
+  window._fpMetric = 'revenue';
+  window._fpPeriod = 'quarterly';
+  window._fpChart = null;
+
+  window.switchFinMetric = function(metric) {
+    window._fpMetric = metric;
+    document.getElementById('fp-btn-revenue').classList.toggle('active', metric === 'revenue');
+    document.getElementById('fp-btn-eps').classList.toggle('active', metric === 'eps');
+    renderFinancialChart();
+  };
+
+  window.switchFinPeriod = function(period) {
+    window._fpPeriod = period;
+    document.getElementById('fp-btn-quarterly').classList.toggle('active', period === 'quarterly');
+    document.getElementById('fp-btn-annual').classList.toggle('active', period === 'annual');
+    renderFinancialChart();
+  };
+
+  function renderFinancialChart() {
+    const canvas = document.getElementById('fin-perf-chart');
+    if (!canvas) {
+      console.error('[ERROR] Canvas fin-perf-chart not found!');
+      return;
+    }
+    const ctx = canvas.getContext('2d');
+    const source = window._fpPeriod === 'annual' ? window._annualData : window._quarterlyData;
+    
+    console.log(`[DEBUG] Rendering Financial Chart: Metric=${window._fpMetric}, Period=${window._fpPeriod}, DataPoints=${source.length}`);
+
+    if (!source || source.length === 0) {
+      console.warn('[WARN] No data available to render chart.');
+      return;
+    }
+
+    const labels = source.map(d => window._fpPeriod === 'annual' ? d.fiscal_year : `${d.fiscal_period} ${d.fiscal_year}`);
+    let dataValues = source.map(d => d[window._fpMetric]);
+
+    // Format Revenue to Billion
+    if (window._fpMetric === 'revenue') {
+      dataValues = dataValues.map(v => v ? v / 1e9 : 0);
+    }
+
+    const labelText = window._fpMetric === 'revenue' ? 'Revenue (Billion $)' : 'EPS ($)';
+    const barColor = window._fpMetric === 'revenue' ? '#6366f1' : '#8b5cf6'; // Specified colors
+
+    if (window._fpChart) {
+      window._fpChart.destroy(); // Clear before re-render as requested
+    }
+
+    window._fpChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: labelText,
+          data: dataValues,
+          backgroundColor: barColor,
+          borderRadius: 4,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: '#FFFFFF', font: { weight: 'bold' } } },
+          tooltip: {
+            backgroundColor: '#1a1f2e',
+            titleColor: '#FFFFFF',
+            bodyColor: '#FFFFFF'
+          }
+        },
+        scales: {
+          x: { ticks: { color: '#FFFFFF' }, grid: { color: 'rgba(255,255,255,0.1)' } },
+          y: { 
+            ticks: { 
+                color: '#FFFFFF',
+                callback: (value) => window._fpMetric === 'revenue' ? `$${value.toFixed(2)}B` : `$${value.toFixed(2)}`
+            }, 
+            grid: { color: 'rgba(255,255,255,0.1)' } 
+          }
+        }
+      }
+    });
   }
 
   function renderChart(historyData) {

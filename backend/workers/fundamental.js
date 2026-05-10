@@ -54,43 +54,78 @@ async function fetchSecIncomeStatements(cik) {
     const gaap = data.facts["us-gaap"];
     if (!gaap) return [];
 
-    // Find best revenue concept
-    const revKeys = ["Revenues", "SalesRevenueNet", "RevenueFromContractWithCustomerExcludingAssessedTax"];
-    let revKey = revKeys.find(k => gaap[k]) || Object.keys(gaap).find(k => k.toLowerCase().includes("revenue"));
+    // Find all possible revenue concept keys
+    const revKeys = ["Revenues", "SalesRevenueNet", "RevenueFromContractWithCustomerExcludingAssessedTax", "SalesRevenueGoodsNet", "RevenuesNetOfInterestExpense"];
+    
+    // Get the units helper
+    const getUnits = (concept) => {
+        if (!concept || !concept.units) return null;
+        const u = concept.units.USD || concept.units.USDPerShare || concept.units["USD/shares"];
+        return (u && u.length > 0) ? u : null;
+    };
 
-    const revenues = gaap[revKey]?.units?.USD || [];
-    const netIncomes = gaap.NetIncomeLoss?.units?.USD || [];
-    const epsData = (gaap.EarningsPerShareDiluted || gaap.EarningsPerShareBasic)?.units?.USD || gaap.EarningsPerShareDiluted?.units?.USDPerShare || gaap.EarningsPerShareBasic?.units?.USDPerShare || [];
+    // 1. First Pass: Detect Fiscal Year End Month (needed for accurate period mapping)
+    let fyEndMonth = 12; // Default
+    const fyReports = getUnits(gaap.Revenues || gaap.SalesRevenueNet)?.filter(d => d.fp === 'FY') || [];
+    if (fyReports.length > 0) {
+        // Take the latest FY report to see which month it ends in
+        const latestFY = fyReports.sort((a, b) => b.fy - a.fy)[0];
+        fyEndMonth = new Date(latestFY.end).getMonth() + 1; // 1-12
+    }
 
     const stmts = {};
-
     const addFact = (arr, field) => {
         if (!arr) return;
         for (const item of arr) {
-            if (!item.fy || !item.fp) continue;
+            if (!item.fp) continue;
+            const endDate = new Date(item.end);
+            if (isNaN(endDate)) continue;
 
-            if (!item.start || !item.end) continue;
-            const days = (new Date(item.end) - new Date(item.start)) / (1000 * 60 * 60 * 24);
+            const days = (endDate - new Date(item.start)) / (1000 * 60 * 60 * 24);
+            
+            // Calculate fiscal year based on end date and detected FY end month.
+            // (Ignoring SEC 'fy' field because it can be misleading for restatements)
+            let fiscalYear = endDate.getFullYear();
+            if (endDate.getMonth() + 1 > fyEndMonth) {
+                fiscalYear += 1;
+            }
+            
+            let period = item.fp;
+            if (days > 80 && days < 105) period = item.fp.startsWith('Q') ? item.fp : 'Q4';
+            else if (days > 350 && days < 380) period = 'FY';
+            else continue;
 
-            if (item.fp.startsWith('Q') && (days < 80 || days > 100)) continue;
-            if (item.fp === 'FY' && (days < 350 || days > 380)) continue;
-
-            const key = `${item.fy}-${item.fp}`;
+            const key = `${fiscalYear}-${period}`;
             if (!stmts[key]) {
-                stmts[key] = { fiscal_year: item.fy, fiscal_period: item.fp, report_date: item.end };
+                stmts[key] = { fiscal_year: fiscalYear, fiscal_period: period, report_date: item.end };
             }
 
-            if (!stmts[key][field] || item.filed > (stmts[key].filed || '')) {
+            const isLatest = !stmts[key].filed || item.filed > stmts[key].filed;
+            const hasFrame = !!item.frame;
+            const isNewField = !stmts[key][field];
+
+            if (item.val !== null && (isNewField || (hasFrame && isLatest) || isLatest)) {
                 stmts[key][field] = item.val;
-                stmts[key].filed = item.filed;
+                if (hasFrame || isLatest) stmts[key].filed = item.filed;
                 stmts[key].report_date = item.end;
             }
         }
     };
 
-    addFact(revenues, 'revenue');
-    addFact(netIncomes, 'net_income');
-    addFact(epsData, 'eps');
+    // 1. Merge all potential Revenue tags
+    for (const k of revKeys) {
+        addFact(getUnits(gaap[k]), 'revenue');
+    }
+    // Fallback for revenue if none of the above found
+    if (Object.values(stmts).every(s => s.revenue == null)) {
+        const fallbackKey = Object.keys(gaap).find(k => k.toLowerCase().includes("revenue") && gaap[k].units);
+        if (fallbackKey) addFact(getUnits(gaap[fallbackKey]), 'revenue');
+    }
+
+    // 2. Add Net Income and EPS
+    addFact(getUnits(gaap.NetIncomeLoss), 'net_income');
+    addFact(getUnits(gaap.EarningsPerShareDiluted) || getUnits(gaap.EarningsPerShareBasic), 'eps');
+
 
     // 4. Auto-Calculate Q4 (Since SEC 10-K merges Q4 into FY)
     const years = [...new Set(Object.values(stmts).map(s => s.fiscal_year))];
@@ -284,9 +319,9 @@ async function runFundamentalWorker() {
                 // 1. Force mode -> TRUE
                 // 2. Reported in last 30 days AND we haven't checked SEC in 30 days -> TRUE
                 // 3. Haven't checked SEC in 90 days (3 months) -> TRUE
-                const hasRecentEarnings = earningsRecent.includes(t.symbol);
+                const isEarningsDay = earningsRecent.includes(t.symbol);
                 const needsSecUpdate = isForce || 
-                    (hasRecentEarnings && (!t.last_sec_update || new Date(t.last_sec_update) < thirtyDaysAgo)) ||
+                    (isEarningsDay && (!t.last_sec_update || new Date(t.last_sec_update) < thirtyDaysAgo)) ||
                     (!t.last_sec_update || new Date(t.last_sec_update) < ninetyDaysAgo);
 
                 if (cik && needsSecUpdate) {

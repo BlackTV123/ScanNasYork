@@ -97,7 +97,7 @@ const { sequelize } = require('../models');
   try {
     await sequelize.authenticate();
     logger.info('Database connection established');
-    await sequelize.sync(); // Creates tables if they don't exist
+    // await sequelize.sync(); // ปิดไว้ก่อนเพื่อป้องกันเซิร์ฟเวอร์ดับตอนสตาร์ท
     logger.info('Models synchronized');
   } catch (err) {
     logger.error('Database connection failed', { error: err.message });
