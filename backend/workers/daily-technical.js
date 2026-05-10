@@ -100,18 +100,21 @@ async function runTechnicalWorker() {
           const prevClose = ohlcvBars.length >= 2 ? ohlcvBars[ohlcvBars.length - 2].c : todayBar.c;
           const changePct = prevClose !== 0 ? ((todayBar.c - prevClose) / prevClose * 100).toFixed(2) : 0;
 
-          await Ticker.update(
-            { 
-              current_price: todayBar.c, 
-              price_change_pct: changePct, 
+          // Only update if we have valid price data
+          if (todayBar && todayBar.c != null) {
+            await Ticker.update({
+              current_price: todayBar.c,
+              price_change_pct: changePct,
               rsi_14: ind.rsi_14,
               macd: ind.macd,
-              last_technical_update: new Date() 
-            },
-            { where: { symbol } }
-          );
+              last_technical_update: new Date()
+            }, { where: { symbol } });
+            processed++;
+          } else {
+            logger.warn(`Skipping ${symbol}: No valid price data`);
+            errors++;
+          }
 
-          processed++;
           logger.debug(`✅ Processed ${symbol}`);
         } catch (err) {
           errors++;

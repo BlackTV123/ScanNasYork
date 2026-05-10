@@ -190,13 +190,13 @@ async function getStockDetail(req, res) {
       IncomeStatement.findAll({
         where: { symbol, period_type: 'Quarterly' },
         order: [['fiscal_year', 'DESC'], ['fiscal_period', 'DESC']],
-        limit: 20,
+        limit: 32,
         raw: true,
       }),
       IncomeStatement.findAll({
         where: { symbol, period_type: 'Annual' },
         order: [['fiscal_year', 'DESC']],
-        limit: 5,
+        limit: 8,
         raw: true,
       }),
     ]);

@@ -8,6 +8,7 @@
     "dev": "node --watch api/server.js",
     "worker:technical": "node workers/daily-technical.js",
     "worker:fundamental": "node workers/fundamental.js",
+    "fundamental:full": "node workers/fundamental.js --full",
     "update:all": "node workers/update-all.js",
     "db:init": "node db/init.js",
     "db:seed": "node db/seed.js"

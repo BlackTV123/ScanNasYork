@@ -108,6 +108,13 @@ const { sequelize } = require('../models');
     logger.info(`ScanNasYork API server running on port ${PORT}`);
     logger.info(`Frontend: http://localhost:${PORT}`);
     logger.info(`API Base: http://localhost:${PORT}/api/v1`);
+  }).on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      logger.error(`Port ${PORT} is already in use. Please kill the process using this port or change the PORT in .env`);
+    } else {
+      logger.error('Server failed to start', { error: err.message });
+    }
+    process.exit(1);
   });
 })();
 
