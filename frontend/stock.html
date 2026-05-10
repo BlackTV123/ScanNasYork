@@ -452,7 +452,6 @@
     const ctx = document.getElementById('price-chart').getContext('2d');
     const labels = historyData.map(d => d.date);
     const closes = historyData.map(d => parseFloat(d.close));
-    const macdHist = historyData.map(d => d.macd_histogram ? parseFloat(d.macd_histogram) : null);
 
     new Chart(ctx, {
       type: 'line',
@@ -460,7 +459,7 @@
         labels,
         datasets: [
           {
-            label: 'Close',
+            label: 'Close Price',
             data: closes,
             borderColor: '#6366f1',
             backgroundColor: 'rgba(99,102,241,0.08)',
@@ -469,13 +468,7 @@
             tension: 0.3,
             pointRadius: 2,
             pointHoverRadius: 5,
-          },
-          {
-            label: 'MACD Hist',
-            data: macdHist,
-            type: 'bar',
-            backgroundColor: '#8b5cf6',
-          },
+          }
         ],
       },
       options: {
@@ -492,11 +485,28 @@
             bodyColor: '#FFFFFF',
             titleFont: { family: 'JetBrains Mono' },
             bodyFont: { family: 'JetBrains Mono' },
+            callbacks: {
+              label: function(context) {
+                return `Price: $${context.raw.toFixed(2)}`;
+              }
+            }
           },
         },
         scales: {
-          x: { ticks: { color: '#FFFFFF', font: { size: 10 } }, grid: { color: 'rgba(148,163,184,0.06)' } },
-          y: { ticks: { color: '#FFFFFF', font: { family: 'JetBrains Mono', size: 10 } }, grid: { color: 'rgba(148,163,184,0.06)' } },
+          x: { 
+            ticks: { color: '#FFFFFF', font: { size: 10 } }, 
+            grid: { color: 'rgba(255,255,255,0.1)' } 
+          },
+          y: { 
+            ticks: { 
+                color: '#FFFFFF', 
+                font: { family: 'JetBrains Mono', size: 10 },
+                callback: function(value) {
+                    return '$' + value;
+                }
+            }, 
+            grid: { color: 'rgba(255,255,255,0.1)' } 
+          },
         },
       },
     });
