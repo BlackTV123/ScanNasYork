@@ -164,7 +164,7 @@
     background: rgba(255, 255, 255, 0.1);
   }
   .toggle-group button.active {
-    background: var(--primary-default);
+    background: var(--accent-primary);
     color: white;
     box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
   }
@@ -336,36 +336,69 @@
 
   function renderFinancialChart() {
     const canvas = document.getElementById('fin-perf-chart');
-    if (!canvas) {
-      console.error('[ERROR] Canvas fin-perf-chart not found!');
-      return;
-    }
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    const source = window._fpPeriod === 'annual' ? window._annualData : window._quarterlyData;
     
-    console.log(`[DEBUG] Rendering Financial Chart: Metric=${window._fpMetric}, Period=${window._fpPeriod}, DataPoints=${source.length}`);
+    // 1. Destroy existing chart
+    if (window._fpChart) {
+      window._fpChart.destroy();
+      window._fpChart = null;
+    }
 
-    if (!source || source.length === 0) {
-      console.warn('[WARN] No data available to render chart.');
+    // 2. Select data source based on period
+    let rawSource = window._fpPeriod === 'annual' ? window._annualData : window._quarterlyData;
+
+    // 3. Ensure rawSource is a valid array
+    if (!Array.isArray(rawSource) || rawSource.length === 0) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.font = '14px "JetBrains Mono", sans-serif';
+      ctx.fillStyle = '#FFFFFF'; 
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      
+      const centerX = canvas.clientWidth / 2;
+      const centerY = canvas.clientHeight / 2;
+      ctx.fillText(`No ${window._fpPeriod} data available for this stock.`, centerX, centerY);
       return;
     }
 
-    // Bug 2 Fix: ใช้ d.period เป็น label ตรงๆ ตามที่ API ส่งมา
-    const labels = source.map(d => d.period);
+    // Clone the array to avoid mutating the original window data
+    let source = [...rawSource];
+
+    // 4. Sort Oldest to Newest
+    source.sort((a, b) => {
+      if (a.fiscal_year !== b.fiscal_year) return a.fiscal_year - b.fiscal_year;
+      // Handle potential undefined fiscal_period safely
+      const periodA = a.fiscal_period || '';
+      const periodB = b.fiscal_period || '';
+      return periodA.localeCompare(periodB);
+    });
+
+    // 5. Limit to 8 Years (8 Annual or 32 Quarterly)
+    const limit = window._fpPeriod === 'annual' ? 8 : 32;
+    if (source.length > limit) {
+      source = source.slice(-limit); 
+    }
+
+    // 6. Map Data for Chart.js
+    const labels = source.map(d => d.period || `${d.fiscal_period || ''} ${d.fiscal_year}`);
     let dataValues = source.map(d => d[window._fpMetric]);
 
-    // Format Revenue to Billion
     if (window._fpMetric === 'revenue') {
       dataValues = dataValues.map(v => v != null ? v / 1e9 : null);
     }
 
     const labelText = window._fpMetric === 'revenue' ? 'Revenue (Billion $)' : 'EPS ($)';
-    const barColor = window._fpMetric === 'revenue' ? '#6366f1' : '#8b5cf6'; // Specified colors
+    const barColor = window._fpMetric === 'revenue' ? '#6366f1' : '#8b5cf6';
 
-    if (window._fpChart) {
-      window._fpChart.destroy(); // Clear before re-render as requested
-    }
+    const formatCurrency = (val, isBillion) => {
+      if (val == null) return 'N/A';
+      const sign = val < 0 ? '-' : '';
+      const absVal = Math.abs(val).toFixed(2);
+      return `${sign}$${absVal}${isBillion ? 'B' : ''}`;
+    };
 
+    // 7. Render Chart
     window._fpChart = new Chart(ctx, {
       type: 'bar',
       data: {
@@ -386,10 +419,15 @@
             backgroundColor: '#1a1f2e',
             borderColor: 'rgba(148,163,184,0.15)',
             borderWidth: 1,
-            titleColor: '#f1f5f9',
-            bodyColor: '#94a3b8',
+            titleColor: '#FFFFFF',
+            bodyColor: '#FFFFFF',
             titleFont: { family: 'JetBrains Mono' },
-            bodyFont: { family: 'JetBrains Mono' }
+            bodyFont: { family: 'JetBrains Mono' },
+            callbacks: {
+              label: function(context) {
+                return `${labelText}: ${formatCurrency(context.raw, window._fpMetric === 'revenue')}`;
+              }
+            }
           }
         },
         scales: {
@@ -397,7 +435,9 @@
           y: { 
             ticks: { 
                 color: '#FFFFFF',
-                callback: (value) => window._fpMetric === 'revenue' ? `$${value.toFixed(2)}B` : `$${value.toFixed(2)}`
+                callback: function(value) {
+                    return formatCurrency(value, window._fpMetric === 'revenue');
+                }
             }, 
             grid: { color: 'rgba(255,255,255,0.1)' } 
           }
@@ -443,20 +483,20 @@
         maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { labels: { color: '#94a3b8', font: { family: 'Inter', size: 11 } } },
+          legend: { labels: { color: '#FFFFFF', font: { family: 'Inter', size: 11 } } },
           tooltip: {
             backgroundColor: '#1a1f2e',
             borderColor: 'rgba(148,163,184,0.15)',
             borderWidth: 1,
-            titleColor: '#f1f5f9',
-            bodyColor: '#94a3b8',
+            titleColor: '#FFFFFF',
+            bodyColor: '#FFFFFF',
             titleFont: { family: 'JetBrains Mono' },
             bodyFont: { family: 'JetBrains Mono' },
           },
         },
         scales: {
-          x: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: 'rgba(148,163,184,0.06)' } },
-          y: { ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 10 } }, grid: { color: 'rgba(148,163,184,0.06)' } },
+          x: { ticks: { color: '#FFFFFF', font: { size: 10 } }, grid: { color: 'rgba(148,163,184,0.06)' } },
+          y: { ticks: { color: '#FFFFFF', font: { family: 'JetBrains Mono', size: 10 } }, grid: { color: 'rgba(148,163,184,0.06)' } },
         },
       },
     });
