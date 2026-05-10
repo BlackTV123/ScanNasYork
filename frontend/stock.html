@@ -193,20 +193,14 @@
         fetch(`/api/v1/stocks/${symbol}/financial-chart`).then(r => r.json())
       ]);
 
-      if (detailRes.success) {
-        renderDetail(detailRes.data);
-        // Prepare data for financial chart as per spec
-        const history = detailRes.data.income_history || [];
-        window._annualData = history.filter(i => i.period_type === 'Annual').sort((a, b) => a.fiscal_year - b.fiscal_year);
-        window._quarterlyData = history.filter(i => i.period_type === 'Quarterly').sort((a, b) => {
-            if (a.fiscal_year !== b.fiscal_year) return a.fiscal_year - b.fiscal_year;
-            return a.fiscal_period.localeCompare(b.fiscal_period);
-        });
-        window._fpMetric = 'revenue';
-        window._fpPeriod = 'quarterly';
+      if (detailRes.success) renderDetail(detailRes.data);
+      if (historyRes.success) renderChart(historyRes.data);
+
+      if (financialRes && financialRes.success) {
+        window._annualData = financialRes.data.annual;
+        window._quarterlyData = financialRes.data.quarterly;
         renderFinancialChart();
       }
-      if (historyRes.success) renderChart(historyRes.data);
     } catch (err) {
       showToast(err.message, 'error');
     } finally {
@@ -356,12 +350,13 @@
       return;
     }
 
-    const labels = source.map(d => window._fpPeriod === 'annual' ? d.fiscal_year : `${d.fiscal_period} ${d.fiscal_year}`);
+    // Bug 2 Fix: ใช้ d.period เป็น label ตรงๆ ตามที่ API ส่งมา
+    const labels = source.map(d => d.period);
     let dataValues = source.map(d => d[window._fpMetric]);
 
     // Format Revenue to Billion
     if (window._fpMetric === 'revenue') {
-      dataValues = dataValues.map(v => v ? v / 1e9 : 0);
+      dataValues = dataValues.map(v => v != null ? v / 1e9 : null);
     }
 
     const labelText = window._fpMetric === 'revenue' ? 'Revenue (Billion $)' : 'EPS ($)';
@@ -389,8 +384,12 @@
           legend: { labels: { color: '#FFFFFF', font: { weight: 'bold' } } },
           tooltip: {
             backgroundColor: '#1a1f2e',
-            titleColor: '#FFFFFF',
-            bodyColor: '#FFFFFF'
+            borderColor: 'rgba(148,163,184,0.15)',
+            borderWidth: 1,
+            titleColor: '#f1f5f9',
+            bodyColor: '#94a3b8',
+            titleFont: { family: 'JetBrains Mono' },
+            bodyFont: { family: 'JetBrains Mono' }
           }
         },
         scales: {
