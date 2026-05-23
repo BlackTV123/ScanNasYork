@@ -1,5 +1,6 @@
 /**
  * Ticker Model
+ * Main registry for all stocks — stores pre-computed fundamental + technical data.
  */
 
 const { DataTypes } = require('sequelize');
@@ -29,12 +30,19 @@ const Ticker = sequelize.define('Ticker', {
   market_cap: {
     type: DataTypes.BIGINT,
   },
+
+  // ── Current Price ──
   current_price: {
     type: DataTypes.DECIMAL(10, 2),
   },
   price_change_pct: {
     type: DataTypes.DECIMAL(5, 2),
   },
+  volume: {
+    type: DataTypes.BIGINT,
+  },
+
+  // ── Cached Fundamental (TTM) ──
   ttm_revenue: {
     type: DataTypes.BIGINT,
   },
@@ -50,12 +58,37 @@ const Ticker = sequelize.define('Ticker', {
   pe_ratio: {
     type: DataTypes.DECIMAL(10, 2),
   },
+
+  // ── Cached Technical Indicators (Latest) ──
   rsi_14: {
-    type: DataTypes.DECIMAL(10, 2),
+    type: DataTypes.DECIMAL(5, 2),
+  },
+  rsi_7: {
+    type: DataTypes.DECIMAL(5, 2),
   },
   macd: {
     type: DataTypes.DECIMAL(10, 4),
   },
+  macd_signal: {
+    type: DataTypes.DECIMAL(10, 4),
+  },
+  macd_histogram: {
+    type: DataTypes.DECIMAL(10, 4),
+  },
+  bb_upper: {
+    type: DataTypes.DECIMAL(10, 2),
+  },
+  bb_middle: {
+    type: DataTypes.DECIMAL(10, 2),
+  },
+  bb_lower: {
+    type: DataTypes.DECIMAL(10, 2),
+  },
+  atr_14: {
+    type: DataTypes.DECIMAL(10, 2),
+  },
+
+  // ── Metadata ──
   last_technical_update: {
     type: DataTypes.DATE,
   },
@@ -74,6 +107,8 @@ const Ticker = sequelize.define('Ticker', {
     { fields: ['pe_ratio'] },
     { fields: ['sector'] },
     { fields: ['market_cap'] },
+    { fields: ['rsi_14'] },
+    { fields: ['current_price'] },
   ],
 });
 

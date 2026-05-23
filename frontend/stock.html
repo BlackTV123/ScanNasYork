@@ -3,10 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Stock detail view — technical and fundamental analysis">
+  <meta name="description" content="Stock detail view — candlestick charts, technical indicators, analyst forecasts, and fundamental analysis">
   <title>Stock Detail | ScanNasYork</title>
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="/css/responsive.css">
+  <!-- TradingView Lightweight Charts v4 -->
+  <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+  <!-- Chart.js for Financial Performance bar chart -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
 </head>
@@ -45,13 +48,36 @@
   <!-- METRIC CARDS -->
   <div class="metrics-grid" id="metrics-grid"></div>
 
-  <!-- PRICE CHART -->
+  <!-- CANDLESTICK CHART (TradingView Lightweight Charts) -->
   <div class="chart-panel">
-    <h2 style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:var(--space-md)">30-Day Price & Indicators</h2>
-    <canvas id="price-chart"></canvas>
+    <div class="chart-panel-header">
+      <h2>Price Chart</h2>
+      <div class="chart-range-buttons" id="chart-range-buttons">
+        <button data-range="1d">1D</button>
+        <button data-range="5d">5D</button>
+        <button data-range="1w">1W</button>
+        <button data-range="1m">1M</button>
+        <button data-range="3m" class="active">3M</button>
+        <button data-range="6m">6M</button>
+      </div>
+    </div>
+    <div id="candlestick-chart"></div>
   </div>
 
-  <!-- FINANCIAL PERFORMANCE CHART (Spec Version) -->
+  <!-- ANALYST FORECAST -->
+  <div class="forecast-panel" id="forecast-panel">
+    <div class="forecast-panel-header">
+      <h2>Analyst Forecast</h2>
+    </div>
+    <div class="forecast-body" id="forecast-body">
+      <div class="forecast-loading">
+        <div class="spinner-sm" style="width:20px;height:20px;border:2px solid rgba(148,163,184,0.15);border-top-color:#6366f1;border-radius:50%;animation:spin 0.8s linear infinite"></div>
+        Loading analyst data...
+      </div>
+    </div>
+  </div>
+
+  <!-- FINANCIAL PERFORMANCE CHART -->
   <section class="panel mb-4" id="financial-performance-panel">
     <div class="panel-header d-flex-between">
       <h2>Financial Performance</h2>
@@ -182,32 +208,309 @@
 
   document.title = `${symbol.toUpperCase()} | ScanNasYork`;
 
+  // ── State ──
+  let candlestickChart = null;
+  let candlestickSeries = null;
+  let volumeSeries = null;
+  let currentRange = '3m';
+
   document.addEventListener('DOMContentLoaded', async () => {
     const overlay = document.getElementById('loading-overlay');
     overlay.classList.add('active');
 
     try {
-      const [detailRes, historyRes, financialRes] = await Promise.all([
+      // Load detail + financial chart + candlestick + forecast in parallel
+      const [detailRes, financialRes, chartRes] = await Promise.all([
         getStockDetail(symbol),
-        getStockHistory(symbol, 30),
-        fetch(`/api/v1/stocks/${symbol}/financial-chart`).then(r => r.json())
+        fetch(`/api/v1/stocks/${symbol}/financial-chart`).then(r => r.json()),
+        getChartData(symbol, '3m'),
       ]);
 
       if (detailRes.success) renderDetail(detailRes.data);
-      if (historyRes.success) renderChart(historyRes.data);
+      if (chartRes.success) renderCandlestickChart(chartRes);
 
       if (financialRes && financialRes.success) {
         window._annualData = financialRes.data.annual;
         window._quarterlyData = financialRes.data.quarterly;
         renderFinancialChart();
       }
+
+      // Load forecast separately (non-blocking)
+      loadForecast();
     } catch (err) {
       showToast(err.message, 'error');
     } finally {
       overlay.classList.remove('active');
     }
+
+    // Chart range buttons
+    setupRangeButtons();
   });
 
+  // ══════════════════════════════
+  // Chart Range Buttons
+  // ══════════════════════════════
+  function setupRangeButtons() {
+    const container = document.getElementById('chart-range-buttons');
+    container.addEventListener('click', async (e) => {
+      if (e.target.tagName !== 'BUTTON') return;
+      const range = e.target.dataset.range;
+      if (range === currentRange) return;
+
+      // Update active state
+      container.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+      e.target.classList.add('active');
+      currentRange = range;
+
+      try {
+        const res = await getChartData(symbol, range);
+        if (res.success) {
+          updateCandlestickData(res);
+        }
+      } catch (err) {
+        showToast('Failed to load chart data', 'error');
+      }
+    });
+  }
+
+  // ══════════════════════════════
+  // TradingView Lightweight Charts
+  // ══════════════════════════════
+  function renderCandlestickChart(chartRes) {
+    const container = document.getElementById('candlestick-chart');
+    
+    candlestickChart = LightweightCharts.createChart(container, {
+      layout: {
+        background: { type: 'solid', color: '#1a1f2e' },
+        textColor: '#94a3b8',
+        fontFamily: "'Inter', sans-serif",
+        fontSize: 11,
+      },
+      grid: {
+        vertLines: { color: 'rgba(148, 163, 184, 0.06)' },
+        horzLines: { color: 'rgba(148, 163, 184, 0.06)' },
+      },
+      crosshair: {
+        mode: LightweightCharts.CrosshairMode.Normal,
+        vertLine: {
+          color: 'rgba(99, 102, 241, 0.4)',
+          width: 1,
+          style: LightweightCharts.LineStyle.Dashed,
+          labelBackgroundColor: '#6366f1',
+        },
+        horzLine: {
+          color: 'rgba(99, 102, 241, 0.4)',
+          width: 1,
+          style: LightweightCharts.LineStyle.Dashed,
+          labelBackgroundColor: '#6366f1',
+        },
+      },
+      rightPriceScale: {
+        borderColor: 'rgba(148, 163, 184, 0.1)',
+        scaleMargins: { top: 0.1, bottom: 0.25 },
+      },
+      timeScale: {
+        borderColor: 'rgba(148, 163, 184, 0.1)',
+        timeVisible: chartRes.interval !== '1d',
+        secondsVisible: false,
+      },
+      handleScroll: { vertTouchDrag: false },
+    });
+
+    // Candlestick series
+    candlestickSeries = candlestickChart.addCandlestickSeries({
+      upColor: '#10b981',
+      downColor: '#ef4444',
+      borderUpColor: '#10b981',
+      borderDownColor: '#ef4444',
+      wickUpColor: '#10b981',
+      wickDownColor: '#ef4444',
+    });
+
+    // Volume series
+    volumeSeries = candlestickChart.addHistogramSeries({
+      priceFormat: { type: 'volume' },
+      priceScaleId: '',
+    });
+
+    volumeSeries.priceScale().applyOptions({
+      scaleMargins: { top: 0.8, bottom: 0 },
+    });
+
+    // Set initial data
+    setCandlestickData(chartRes.data);
+
+    // Auto-resize
+    const observer = new ResizeObserver(() => {
+      candlestickChart.applyOptions({
+        width: container.clientWidth,
+        height: container.clientHeight,
+      });
+    });
+    observer.observe(container);
+  }
+
+  function setCandlestickData(data) {
+    if (!data || data.length === 0) return;
+
+    const candleData = data.map(d => ({
+      time: d.time,
+      open: d.open,
+      high: d.high,
+      low: d.low,
+      close: d.close,
+    }));
+
+    const volumeData = data.map(d => ({
+      time: d.time,
+      value: d.volume,
+      color: d.close >= d.open
+        ? 'rgba(16, 185, 129, 0.3)'
+        : 'rgba(239, 68, 68, 0.3)',
+    }));
+
+    candlestickSeries.setData(candleData);
+    volumeSeries.setData(volumeData);
+    candlestickChart.timeScale().fitContent();
+  }
+
+  function updateCandlestickData(chartRes) {
+    // Update time scale settings for intraday vs daily
+    candlestickChart.applyOptions({
+      timeScale: {
+        timeVisible: chartRes.interval !== '1d',
+        secondsVisible: false,
+      },
+    });
+    setCandlestickData(chartRes.data);
+  }
+
+  // ══════════════════════════════
+  // Analyst Forecast
+  // ══════════════════════════════
+  async function loadForecast() {
+    const body = document.getElementById('forecast-body');
+    try {
+      const res = await getForecast(symbol);
+      if (res.success) {
+        renderForecast(res.data);
+      } else {
+        body.innerHTML = '<div class="forecast-error">No forecast data available</div>';
+      }
+    } catch (err) {
+      body.innerHTML = '<div class="forecast-error">Forecast data unavailable for this stock</div>';
+    }
+  }
+
+  function renderForecast(data) {
+    const body = document.getElementById('forecast-body');
+
+    // Recommendation badge class mapping
+    const recKey = (data.recommendation.key || 'none').toLowerCase().replace(/[\s_]/g, '-');
+    const recLabel = (data.recommendation.key || '—').replace(/_/g, ' ').toUpperCase();
+
+    // Target price
+    const tp = data.target_price;
+    const targetPriceHtml = tp.mean
+      ? `<div class="value">${formatPrice(tp.mean)}</div>
+         <div class="target-price-range">
+           <span class="low">${formatPrice(tp.low)}</span>
+           <span class="separator">—</span>
+           <span class="high">${formatPrice(tp.high)}</span>
+         </div>`
+      : '<div class="value" style="color:var(--text-muted)">—</div>';
+
+    // EPS estimates
+    const eps = data.eps_estimates;
+    const epsCurrentHtml = eps.current_quarter.estimate != null
+      ? `<div class="est-value">$${parseFloat(eps.current_quarter.estimate).toFixed(2)}</div>
+         <div class="est-range">${formatPrice(eps.current_quarter.low)} — ${formatPrice(eps.current_quarter.high)}</div>`
+      : '<div class="est-value" style="color:var(--text-muted)">—</div>';
+    
+    const epsNextHtml = eps.next_quarter.estimate != null
+      ? `<div class="est-value">$${parseFloat(eps.next_quarter.estimate).toFixed(2)}</div>
+         <div class="est-range">${formatPrice(eps.next_quarter.low)} — ${formatPrice(eps.next_quarter.high)}</div>`
+      : '<div class="est-value" style="color:var(--text-muted)">—</div>';
+
+    // Revenue estimates
+    const rev = data.revenue_estimates;
+    const revCurrentHtml = rev.current_quarter.estimate != null
+      ? `<div class="est-value">${formatLargeNumber(rev.current_quarter.estimate)}</div>
+         <div class="est-range">${formatLargeNumber(rev.current_quarter.low)} — ${formatLargeNumber(rev.current_quarter.high)}</div>`
+      : '<div class="est-value" style="color:var(--text-muted)">—</div>';
+
+    const revNextHtml = rev.next_quarter.estimate != null
+      ? `<div class="est-value">${formatLargeNumber(rev.next_quarter.estimate)}</div>
+         <div class="est-range">${formatLargeNumber(rev.next_quarter.low)} — ${formatLargeNumber(rev.next_quarter.high)}</div>`
+      : '<div class="est-value" style="color:var(--text-muted)">—</div>';
+
+    // Earnings history
+    const historyHtml = data.earnings_history.length > 0
+      ? `<div class="earnings-history-grid">
+          ${data.earnings_history.slice(0, 4).map(e => {
+            const surprise = e.surprise_pct != null ? parseFloat(e.surprise_pct) : null;
+            const surpriseClass = surprise != null ? (surprise >= 0 ? 'beat' : 'miss') : '';
+            const surpriseText = surprise != null ? `${surprise >= 0 ? '+' : ''}${surprise.toFixed(2)}%` : '';
+            return `
+              <div class="earnings-history-item">
+                <div class="quarter">${e.quarter || '—'}</div>
+                <div class="actual">${e.actual != null ? '$' + parseFloat(e.actual).toFixed(2) : '—'}</div>
+                ${surpriseText ? `<div class="surprise ${surpriseClass}">${surpriseText}</div>` : ''}
+              </div>`;
+          }).join('')}
+        </div>`
+      : '';
+
+    body.innerHTML = `
+      <!-- Target Price & Recommendation -->
+      <div class="forecast-top-row">
+        <div class="target-price-card">
+          <div class="label">Target Price (Mean)</div>
+          ${targetPriceHtml}
+        </div>
+        <div class="recommendation-card">
+          <div class="recommendation-badge ${recKey}">${recLabel}</div>
+          <div class="recommendation-analysts">${data.recommendation.analysts || 0} analysts</div>
+        </div>
+      </div>
+
+      <!-- Estimates Grid -->
+      <div class="estimate-grid">
+        <div class="estimate-section">
+          <div class="estimate-section-title">📊 EPS Estimates</div>
+          <div class="estimate-row">
+            <span class="est-label">Current Quarter</span>
+            <div>${epsCurrentHtml}</div>
+          </div>
+          <div class="estimate-row">
+            <span class="est-label">Next Quarter</span>
+            <div>${epsNextHtml}</div>
+          </div>
+        </div>
+        <div class="estimate-section">
+          <div class="estimate-section-title">💰 Revenue Estimates</div>
+          <div class="estimate-row">
+            <span class="est-label">Current Quarter</span>
+            <div>${revCurrentHtml}</div>
+          </div>
+          <div class="estimate-row">
+            <span class="est-label">Next Quarter</span>
+            <div>${revNextHtml}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Earnings Surprise History -->
+      ${historyHtml ? `<div style="margin-top:var(--space-md)">
+        <div style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:var(--space-sm)">📈 Recent Earnings Surprise</div>
+        ${historyHtml}
+      </div>` : ''}
+    `;
+  }
+
+  // ══════════════════════════════
+  // Stock Detail
+  // ══════════════════════════════
   function renderDetail(data) {
     document.getElementById('detail-symbol').textContent = data.symbol;
     document.getElementById('detail-name').textContent = data.company_name || '';
@@ -215,6 +518,14 @@
 
     const price = data.current_metrics?.price;
     document.getElementById('detail-price').textContent = formatPrice(price);
+
+    const changePct = data.current_metrics?.price_change_pct;
+    const changeEl = document.getElementById('detail-change');
+    if (changePct != null) {
+      const pct = parseFloat(changePct);
+      changeEl.textContent = formatPct(pct);
+      changeEl.style.color = pct >= 0 ? 'var(--color-bullish)' : 'var(--color-bearish)';
+    }
 
     // Metrics cards
     const m = data.current_metrics || {};
@@ -284,7 +595,6 @@
             <td class="cell-number" style="font-size:0.75rem">${annual.report_date || '—'}</td>
           </tr>`;
       } else {
-        // Placeholder row for years with only quarterly data
         html += `
           <tr class="row-annual">
             <td class="cell-period">📅 FY ${yr}</td>
@@ -295,8 +605,7 @@
           </tr>`;
       }
 
-      // Quarterly rows for this year (Sorted descending by period)
-      // Note: Backend already sorts them DESC, but we'll be safe
+      // Quarterly rows for this year
       quarters.sort((a, b) => b.fiscal_period.localeCompare(a.fiscal_period));
       for (const q of quarters) {
         html += `
@@ -313,7 +622,9 @@
     tbody.innerHTML = html;
   }
 
-  // Financial Performance Chart Logic (Spec Version)
+  // ══════════════════════════════
+  // Financial Performance Chart
+  // ══════════════════════════════
   window._annualData = [];
   window._quarterlyData = [];
   window._fpMetric = 'revenue';
@@ -339,48 +650,39 @@
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     
-    // 1. Destroy existing chart
     if (window._fpChart) {
       window._fpChart.destroy();
       window._fpChart = null;
     }
 
-    // 2. Select data source based on period
     let rawSource = window._fpPeriod === 'annual' ? window._annualData : window._quarterlyData;
 
-    // 3. Ensure rawSource is a valid array
     if (!Array.isArray(rawSource) || rawSource.length === 0) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.font = '14px "JetBrains Mono", sans-serif';
       ctx.fillStyle = '#FFFFFF'; 
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      
       const centerX = canvas.clientWidth / 2;
       const centerY = canvas.clientHeight / 2;
       ctx.fillText(`No ${window._fpPeriod} data available for this stock.`, centerX, centerY);
       return;
     }
 
-    // Clone the array to avoid mutating the original window data
     let source = [...rawSource];
 
-    // 4. Sort Oldest to Newest
     source.sort((a, b) => {
       if (a.fiscal_year !== b.fiscal_year) return a.fiscal_year - b.fiscal_year;
-      // Handle potential undefined fiscal_period safely
       const periodA = a.fiscal_period || '';
       const periodB = b.fiscal_period || '';
       return periodA.localeCompare(periodB);
     });
 
-    // 5. Limit to 8 Years (8 Annual or 32 Quarterly)
     const limit = window._fpPeriod === 'annual' ? 8 : 32;
     if (source.length > limit) {
       source = source.slice(-limit); 
     }
 
-    // 6. Map Data for Chart.js
     const labels = source.map(d => d.period || `${d.fiscal_period || ''} ${d.fiscal_year}`);
     let dataValues = source.map(d => d[window._fpMetric]);
 
@@ -398,7 +700,6 @@
       return `${sign}$${absVal}${isBillion ? 'B' : ''}`;
     };
 
-    // 7. Render Chart
     window._fpChart = new Chart(ctx, {
       type: 'bar',
       data: {
@@ -445,74 +746,7 @@
       }
     });
   }
-
-  function renderChart(historyData) {
-    if (!historyData || historyData.length === 0) return;
-
-    const ctx = document.getElementById('price-chart').getContext('2d');
-    const labels = historyData.map(d => d.date);
-    const closes = historyData.map(d => parseFloat(d.close));
-
-    new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels,
-        datasets: [
-          {
-            label: 'Close Price',
-            data: closes,
-            borderColor: '#6366f1',
-            backgroundColor: 'rgba(99,102,241,0.08)',
-            borderWidth: 2,
-            fill: true,
-            tension: 0.3,
-            pointRadius: 2,
-            pointHoverRadius: 5,
-          }
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-          legend: { labels: { color: '#FFFFFF', font: { family: 'Inter', size: 11 } } },
-          tooltip: {
-            backgroundColor: '#1a1f2e',
-            borderColor: 'rgba(148,163,184,0.15)',
-            borderWidth: 1,
-            titleColor: '#FFFFFF',
-            bodyColor: '#FFFFFF',
-            titleFont: { family: 'JetBrains Mono' },
-            bodyFont: { family: 'JetBrains Mono' },
-            callbacks: {
-              label: function(context) {
-                return `Price: $${context.raw.toFixed(2)}`;
-              }
-            }
-          },
-        },
-        scales: {
-          x: { 
-            ticks: { color: '#FFFFFF', font: { size: 10 } }, 
-            grid: { color: 'rgba(255,255,255,0.1)' } 
-          },
-          y: { 
-            ticks: { 
-                color: '#FFFFFF', 
-                font: { family: 'JetBrains Mono', size: 10 },
-                callback: function(value) {
-                    return '$' + value;
-                }
-            }, 
-            grid: { color: 'rgba(255,255,255,0.1)' } 
-          },
-        },
-      },
-    });
-  }
 })();
 </script>
 </body>
 </html>
-

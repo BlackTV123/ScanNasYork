@@ -28,9 +28,14 @@ async function getStockDetail(symbol) {
   return apiRequest(`/stocks/${symbol.toUpperCase()}`);
 }
 
-/** Get stock price history */
-async function getStockHistory(symbol, days = 30) {
-  return apiRequest(`/stocks/${symbol.toUpperCase()}/history`, { days });
+/** Get candlestick chart data (on-demand from Yahoo) */
+async function getChartData(symbol, range = '3m') {
+  return apiRequest(`/stocks/${symbol.toUpperCase()}/chart`, { range });
+}
+
+/** Get analyst forecast data (on-demand from Yahoo) */
+async function getForecast(symbol) {
+  return apiRequest(`/stocks/${symbol.toUpperCase()}/forecast`);
 }
 
 /** Get available sectors */

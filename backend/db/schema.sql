@@ -10,6 +10,7 @@ DROP TABLE IF EXISTS Tickers CASCADE;
 
 -- ============================================
 -- 1. Tickers Table (Main Registry)
+--    Stores pre-computed fundamental + technical data
 -- ============================================
 CREATE TABLE Tickers (
   id SERIAL PRIMARY KEY,
@@ -19,9 +20,10 @@ CREATE TABLE Tickers (
   industry VARCHAR(100),
   market_cap BIGINT,
 
-  -- Cached Technical (Latest)
+  -- Current Price
   current_price DECIMAL(10, 2),
   price_change_pct DECIMAL(5, 2),
+  volume BIGINT,
 
   -- Cached Fundamental (TTM)
   ttm_revenue BIGINT,
@@ -30,9 +32,21 @@ CREATE TABLE Tickers (
   latest_eps_yoy_growth DECIMAL(5, 2),
   pe_ratio DECIMAL(10, 2),
 
+  -- Cached Technical Indicators (Latest)
+  rsi_14 DECIMAL(5, 2),
+  rsi_7 DECIMAL(5, 2),
+  macd DECIMAL(10, 4),
+  macd_signal DECIMAL(10, 4),
+  macd_histogram DECIMAL(10, 4),
+  bb_upper DECIMAL(10, 2),
+  bb_middle DECIMAL(10, 2),
+  bb_lower DECIMAL(10, 2),
+  atr_14 DECIMAL(10, 2),
+
   -- Metadata
   last_technical_update TIMESTAMP,
   last_fundamental_update TIMESTAMP,
+  last_sec_update TIMESTAMP,
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -43,9 +57,14 @@ CREATE INDEX idx_tickers_ttm_revenue ON Tickers(ttm_revenue);
 CREATE INDEX idx_tickers_pe_ratio ON Tickers(pe_ratio);
 CREATE INDEX idx_tickers_sector ON Tickers(sector);
 CREATE INDEX idx_tickers_market_cap ON Tickers(market_cap);
+CREATE INDEX idx_tickers_rsi_14 ON Tickers(rsi_14);
+CREATE INDEX idx_tickers_current_price ON Tickers(current_price);
 
 -- ============================================
--- 2. Daily_Metrics Table (Technical Data)
+-- 2. Daily_Metrics Table (DEPRECATED — Soft)
+--    Kept for reference. Workers no longer INSERT here.
+--    Use "node db/migrate-technical-to-tickers.js" to
+--    backfill Tickers, then this table can be DROPped.
 -- ============================================
 CREATE TABLE Daily_Metrics (
   id SERIAL PRIMARY KEY,

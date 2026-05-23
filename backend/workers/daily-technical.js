@@ -1,14 +1,16 @@
 /**
- * Daily Technical Worker — Yahoo Finance Version
+ * Daily Technical Worker — Hybrid Architecture Version
  * 100% Free. No API Keys needed.
- * Scrapes historical data, calculates indicators locally, and saves to DB.
+ *
+ * NEW: Fetches 50 days of history into memory, calculates indicators,
+ * and UPDATEs the Tickers table directly. No more Daily_Metrics INSERT.
  */
 
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const cron = require('node-cron');
 const YahooFinance = require('yahoo-finance2').default;
 const yf = new YahooFinance();
-const { Ticker, DailyMetric } = require('../models');
+const { Ticker } = require('../models');
 const { calculateAll } = require('../utils/indicators');
 const logger = require('../utils/logger');
 
@@ -26,7 +28,7 @@ function chunkArray(array, chunkSize) {
 
 async function runTechnicalWorker() {
   const startTime = Date.now();
-  logger.info('=== Yahoo Technical Worker START ===');
+  logger.info('=== Yahoo Technical Worker START (Hybrid Mode) ===');
 
   try {
     // 1. Checkpointing: Get only symbols that haven't been updated in the last 12 hours
@@ -35,9 +37,14 @@ async function runTechnicalWorker() {
 
     const { Op } = require('sequelize');
     const isForce = process.argv.includes('--force');
+    const targetSymbol = process.argv.find(arg => arg.startsWith('--symbol='))?.split('=')[1]?.toUpperCase();
 
     const queryOptions = { attributes: ['symbol'], raw: true };
-    if (!isForce) {
+
+    if (targetSymbol) {
+      queryOptions.where = { symbol: targetSymbol };
+      logger.info(`Targeting specific symbol: ${targetSymbol}`);
+    } else if (!isForce) {
       queryOptions.where = {
         [Op.or]: [
           { last_technical_update: { [Op.lt]: twelveHoursAgo } },
@@ -52,9 +59,9 @@ async function runTechnicalWorker() {
     const tickers = await Ticker.findAll(queryOptions);
     logger.info(`Loaded ${tickers.length} tickers to process.`);
 
-    // Date range for historical data (e.g. last 300 days)
+    // Date range: 50 days is enough for RSI(14), MACD(12/26/9), BB(20), ATR(14)
     const period1 = new Date();
-    period1.setDate(period1.getDate() - 300);
+    period1.setDate(period1.getDate() - 50);
     const yahooOptions = { period1: period1.toISOString().split('T')[0] };
 
     // 2. Smart Batching: Process 10 at a time
@@ -78,35 +85,32 @@ async function runTechnicalWorker() {
             o: r.open, h: r.high, l: r.low, c: r.close, v: r.volume
           }));
 
-          // Calculate all technical indicators perfectly using local math
+          // Calculate all technical indicators using local math (in-memory)
           const ind = calculateAll(ohlcvBars);
 
           // Get today's bar
           const todayBar = ohlcvBars[ohlcvBars.length - 1];
-          const dateStr = result.quotes[result.quotes.length - 1].date.toISOString().split('T')[0];
 
-          // Upsert into DailyMetric
-          await DailyMetric.upsert({
-            symbol,
-            date: dateStr,
-            open: todayBar.o, high: todayBar.h, low: todayBar.l, close: todayBar.c, volume: todayBar.v,
-            rsi_14: ind.rsi_14, rsi_14_ma: ind.rsi_14_ma, rsi_14_bb_upper: ind.rsi_14_bb_upper, rsi_14_bb_lower: ind.rsi_14_bb_lower, rsi_7: ind.rsi_7,
-            macd: ind.macd, macd_signal: ind.macd_signal, macd_histogram: ind.macd_histogram,
-            bb_upper: ind.bb_upper, bb_middle: ind.bb_middle, bb_lower: ind.bb_lower,
-            atr_14: ind.atr_14,
-          });
-
-          // Update ticker price
+          // Calculate price change %
           const prevClose = ohlcvBars.length >= 2 ? ohlcvBars[ohlcvBars.length - 2].c : todayBar.c;
           const changePct = prevClose !== 0 ? ((todayBar.c - prevClose) / prevClose * 100).toFixed(2) : 0;
 
           // Only update if we have valid price data
           if (todayBar && todayBar.c != null) {
+            // UPDATE Tickers directly — no more Daily_Metrics INSERT!
             await Ticker.update({
               current_price: todayBar.c,
               price_change_pct: changePct,
+              volume: todayBar.v,
               rsi_14: ind.rsi_14,
+              rsi_7: ind.rsi_7,
               macd: ind.macd,
+              macd_signal: ind.macd_signal,
+              macd_histogram: ind.macd_histogram,
+              bb_upper: ind.bb_upper,
+              bb_middle: ind.bb_middle,
+              bb_lower: ind.bb_lower,
+              atr_14: ind.atr_14,
               last_technical_update: new Date()
             }, { where: { symbol } });
             processed++;

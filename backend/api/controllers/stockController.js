@@ -1,10 +1,21 @@
 /**
- * Stock Controller — Sequelize ORM Version
+ * Stock Controller — Hybrid Architecture Version
+ * 
+ * Changes:
+ * - screenStocks(): reads technical data directly from Tickers (no DailyMetric JOIN)
+ * - getStockDetail(): reads technical data from Tickers
+ * - getChartData(): NEW — on-demand candlestick data from Yahoo Finance
+ * - getForecast(): NEW — analyst forecast/estimates from Yahoo Finance
+ * - getStockHistory(): REMOVED (deprecated with Daily_Metrics)
  */
 
 const { Op, fn, col, literal } = require('sequelize');
-const { Ticker, DailyMetric, IncomeStatement, sequelize } = require('../../models');
+const { Ticker, IncomeStatement, sequelize } = require('../../models');
 const logger = require('../../utils/logger');
+
+// Yahoo Finance for on-demand data
+const YahooFinance = require('yahoo-finance2').default;
+const yf = new YahooFinance({ suppressNotices: ['yahooSurvey', 'ripHistorical'] });
 
 // Simple in-memory cache
 const cache = new Map();
@@ -22,6 +33,18 @@ function setCache(key, data) {
 }
 
 // ════════════════════════════════════
+// Range → Yahoo period mapping
+// ════════════════════════════════════
+const RANGE_MAP = {
+  '1d':  { days: 1,   interval: '5m'  },
+  '5d':  { days: 5,   interval: '15m' },
+  '1w':  { days: 7,   interval: '30m' },
+  '1m':  { days: 30,  interval: '1d'  },
+  '3m':  { days: 90,  interval: '1d'  },
+  '6m':  { days: 180, interval: '1d'  },
+};
+
+// ════════════════════════════════════
 // GET /stocks/screen
 // ════════════════════════════════════
 async function screenStocks(req, res) {
@@ -32,8 +55,10 @@ async function screenStocks(req, res) {
     const cached = getCached(cacheKey);
     if (cached) return res.json({ ...cached, cached: true, execution_time_ms: Date.now() - start });
 
-    // Build Ticker WHERE conditions
+    // Build Ticker WHERE conditions (all filters now on Tickers directly!)
     const tickerWhere = {};
+
+    // Fundamental filters
     if (f.eps_min !== undefined) tickerWhere.ttm_eps = { ...tickerWhere.ttm_eps, [Op.gte]: parseFloat(f.eps_min) };
     if (f.eps_max !== undefined) tickerWhere.ttm_eps = { ...tickerWhere.ttm_eps, [Op.lte]: parseFloat(f.eps_max) };
     if (f.revenue_min !== undefined) tickerWhere.ttm_revenue = { ...tickerWhere.ttm_revenue, [Op.gte]: parseFloat(f.revenue_min) * 1e6 };
@@ -44,6 +69,13 @@ async function screenStocks(req, res) {
     if (f.market_cap_min !== undefined) tickerWhere.market_cap = { ...tickerWhere.market_cap, [Op.gte]: parseFloat(f.market_cap_min) };
     if (f.market_cap_max !== undefined) tickerWhere.market_cap = { ...tickerWhere.market_cap, [Op.lte]: parseFloat(f.market_cap_max) };
     if (f.sector) tickerWhere.sector = f.sector;
+
+    // Technical filters — now directly on Tickers!
+    if (f.rsi_min !== undefined) tickerWhere.rsi_14 = { ...tickerWhere.rsi_14, [Op.gte]: parseFloat(f.rsi_min) };
+    if (f.rsi_max !== undefined) tickerWhere.rsi_14 = { ...tickerWhere.rsi_14, [Op.lte]: parseFloat(f.rsi_max) };
+    if (f.macd_positive === 'true' || f.macd_positive === true) tickerWhere.macd = { [Op.gt]: 0 };
+
+    // Search
     if (f.search) {
       tickerWhere[Op.or] = [
         { symbol: { [Op.iLike]: `%${f.search}%` } },
@@ -51,56 +83,25 @@ async function screenStocks(req, res) {
       ];
     }
 
-    // Build DailyMetric WHERE conditions
-    const metricWhere = {};
-    if (f.rsi_min !== undefined) metricWhere.rsi_14 = { ...metricWhere.rsi_14, [Op.gte]: parseFloat(f.rsi_min) };
-    if (f.rsi_max !== undefined) metricWhere.rsi_14 = { ...metricWhere.rsi_14, [Op.lte]: parseFloat(f.rsi_max) };
-    if (f.macd_positive === 'true' || f.macd_positive === true) metricWhere.macd = { [Op.gt]: 0 };
-
     const limit = parseInt(f.limit, 10) || 50;
     const offset = parseInt(f.offset, 10) || 0;
 
     // Sort mapping
     const sort_by = f.sort_by || 'symbol';
     const sort_order = f.sort_order || 'ASC';
-
-    // We use Sequelize.literal to force NULLS LAST behavior in PostgreSQL
     const order = [sequelize.literal(`"${sort_by}" ${sort_order} NULLS LAST`)];
 
-    // For technical filters, we need a subquery approach
-    // First get symbols matching metric filters, then filter tickers
-    let symbolFilter = null;
-    if (Object.keys(metricWhere).length > 0) {
-      // Get latest metric per symbol that matches filters
-      const extraWhere = { ...metricWhere };
-      // Get latest date with metrics
-      const latestMetrics = await DailyMetric.findAll({
-        attributes: ['symbol'],
-        where: extraWhere,
-        group: ['symbol'],
-        raw: true,
-      });
-      symbolFilter = latestMetrics.map(m => m.symbol);
-
-      if (symbolFilter.length === 0) {
-        return res.json({
-          success: true, data: [],
-          pagination: { total_results: 0, returned: 0, limit, offset, pages: 0 },
-          execution_time_ms: Date.now() - start,
-        });
-      }
-      tickerWhere.symbol = { [Op.in]: symbolFilter };
-    }
-
-    // Count + Fetch in parallel
+    // Count + Fetch in parallel — NO MORE DailyMetric JOIN!
     const [total, tickers] = await Promise.all([
       Ticker.count({ where: tickerWhere }),
       Ticker.findAll({
         attributes: [
-          'symbol', 'company_name', 'sector', 'industry', 
-          'market_cap', 'current_price', 'price_change_pct', 
+          'symbol', 'company_name', 'sector', 'industry',
+          'market_cap', 'current_price', 'price_change_pct', 'volume',
           'ttm_eps', 'ttm_revenue', 'pe_ratio', 'latest_eps_yoy_growth',
-          'rsi_14', 'macd'
+          'rsi_14', 'rsi_7', 'macd', 'macd_signal', 'macd_histogram',
+          'bb_upper', 'bb_middle', 'bb_lower', 'atr_14',
+          'last_technical_update'
         ],
         where: tickerWhere,
         order,
@@ -110,57 +111,31 @@ async function screenStocks(req, res) {
       }),
     ]);
 
-    // Fetch latest metrics for the returned tickers
-    const symbols = tickers.map(t => t.symbol);
-    let metricsMap = {};
-
-    if (symbols.length > 0) {
-      // Get the latest metric row per symbol using a subquery
-      const latestDates = await sequelize.query(`
-        SELECT DISTINCT ON (symbol) symbol, date, rsi_14, rsi_14_ma, rsi_14_bb_upper, rsi_14_bb_lower, rsi_7, macd, macd_signal,
-               macd_histogram, volume, close
-        FROM daily_metrics
-        WHERE symbol IN (:symbols)
-        ORDER BY symbol, date DESC
-      `, {
-        replacements: { symbols },
-        type: sequelize.constructor.QueryTypes.SELECT,
-      });
-
-      for (const m of latestDates) {
-        metricsMap[m.symbol] = m;
-      }
-    }
-
-    // Merge ticker + metrics
-    const data = tickers.map(t => {
-      const m = metricsMap[t.symbol] || {};
-      return {
-        symbol: t.symbol,
-        company_name: t.company_name,
-        sector: t.sector,
-        industry: t.industry,
-        market_cap: t.market_cap,
-        current_price: t.current_price,
-        price_change_pct: t.price_change_pct,
-        ttm_eps: t.ttm_eps,
-        ttm_revenue: t.ttm_revenue,
-        ttm_net_income: t.ttm_net_income,
-        latest_eps_yoy_growth: t.latest_eps_yoy_growth,
-        pe_ratio: t.pe_ratio,
-        rsi_14: m.rsi_14 || null,
-        rsi_14_ma: m.rsi_14_ma || null,
-        rsi_14_bb_upper: m.rsi_14_bb_upper || null,
-        rsi_14_bb_lower: m.rsi_14_bb_lower || null,
-        rsi_7: m.rsi_7 || null,
-        macd: m.macd || null,
-        macd_signal: m.macd_signal || null,
-        macd_histogram: m.macd_histogram || null,
-        volume: m.volume || null,
-        close: m.close || null,
-        metrics_date: m.date || null,
-      };
-    });
+    const data = tickers.map(t => ({
+      symbol: t.symbol,
+      company_name: t.company_name,
+      sector: t.sector,
+      industry: t.industry,
+      market_cap: t.market_cap,
+      current_price: t.current_price,
+      price_change_pct: t.price_change_pct,
+      volume: t.volume,
+      ttm_eps: t.ttm_eps,
+      ttm_revenue: t.ttm_revenue,
+      ttm_net_income: t.ttm_net_income,
+      latest_eps_yoy_growth: t.latest_eps_yoy_growth,
+      pe_ratio: t.pe_ratio,
+      rsi_14: t.rsi_14,
+      rsi_7: t.rsi_7,
+      macd: t.macd,
+      macd_signal: t.macd_signal,
+      macd_histogram: t.macd_histogram,
+      bb_upper: t.bb_upper,
+      bb_middle: t.bb_middle,
+      bb_lower: t.bb_lower,
+      atr_14: t.atr_14,
+      metrics_date: t.last_technical_update,
+    }));
 
     const response = {
       success: true,
@@ -184,9 +159,8 @@ async function getStockDetail(req, res) {
   try {
     const symbol = req.params.symbol.toUpperCase();
 
-    const [ticker, latestMetric, quarterly, annual] = await Promise.all([
+    const [ticker, quarterly, annual] = await Promise.all([
       Ticker.findOne({ where: { symbol }, raw: true }),
-      DailyMetric.findOne({ where: { symbol }, order: [['date', 'DESC']], raw: true }),
       IncomeStatement.findAll({
         where: { symbol, period_type: 'Quarterly' },
         order: [['fiscal_year', 'DESC'], ['fiscal_period', 'DESC']],
@@ -211,22 +185,22 @@ async function getStockDetail(req, res) {
         sector: ticker.sector,
         industry: ticker.industry,
         market_cap: ticker.market_cap,
-        current_metrics: latestMetric ? {
-          price: latestMetric.close,
-          rsi_14: latestMetric.rsi_14,
-          rsi_14_ma: latestMetric.rsi_14_ma,
-          rsi_14_bb_upper: latestMetric.rsi_14_bb_upper,
-          rsi_14_bb_lower: latestMetric.rsi_14_bb_lower,
-          rsi_7: latestMetric.rsi_7,
-          macd: latestMetric.macd,
-          macd_signal: latestMetric.macd_signal,
-          macd_histogram: latestMetric.macd_histogram,
-          volume: latestMetric.volume,
-          bb_upper: latestMetric.bb_upper,
-          bb_lower: latestMetric.bb_lower,
-          atr_14: latestMetric.atr_14,
-          date: latestMetric.date,
-        } : null,
+        // Technical data now comes directly from Tickers
+        current_metrics: {
+          price: ticker.current_price,
+          price_change_pct: ticker.price_change_pct,
+          volume: ticker.volume,
+          rsi_14: ticker.rsi_14,
+          rsi_7: ticker.rsi_7,
+          macd: ticker.macd,
+          macd_signal: ticker.macd_signal,
+          macd_histogram: ticker.macd_histogram,
+          bb_upper: ticker.bb_upper,
+          bb_middle: ticker.bb_middle,
+          bb_lower: ticker.bb_lower,
+          atr_14: ticker.atr_14,
+          date: ticker.last_technical_update,
+        },
         fundamentals: {
           ttm_revenue: ticker.ttm_revenue,
           ttm_eps: ticker.ttm_eps,
@@ -259,29 +233,188 @@ async function getStockDetail(req, res) {
 }
 
 // ════════════════════════════════════
-// GET /stocks/:symbol/history
+// GET /stocks/:symbol/chart
+// On-demand candlestick data from Yahoo Finance
 // ════════════════════════════════════
-async function getStockHistory(req, res) {
+async function getChartData(req, res) {
   try {
     const symbol = req.params.symbol.toUpperCase();
-    const days = parseInt(req.query.days, 10) || 30;
+    const range = (req.query.range || '3m').toLowerCase();
 
-    const rows = await DailyMetric.findAll({
-      where: { symbol },
-      order: [['date', 'DESC']],
-      limit: days,
-      raw: true,
+    const rangeConfig = RANGE_MAP[range];
+    if (!rangeConfig) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid range. Valid: ${Object.keys(RANGE_MAP).join(', ')}`
+      });
+    }
+
+    // Check cache first
+    const cacheKey = `chart:${symbol}:${range}`;
+    const cached = getCached(cacheKey);
+    if (cached) return res.json(cached);
+
+    // Calculate date range
+    const period1 = new Date();
+    period1.setDate(period1.getDate() - rangeConfig.days);
+
+    const result = await yf.chart(symbol, {
+      period1: period1.toISOString().split('T')[0],
+      interval: rangeConfig.interval,
     });
 
-    res.json({
+    if (!result || !result.quotes || result.quotes.length === 0) {
+      return res.status(404).json({ success: false, error: 'No chart data available' });
+    }
+
+    // Format for Lightweight Charts
+    const data = result.quotes
+      .filter(q => q.open != null && q.close != null)
+      .map(q => {
+        // For intraday (1d, 5d, 1w), use unix timestamp
+        // For daily intervals, use date string
+        const time = rangeConfig.interval === '1d'
+          ? q.date.toISOString().split('T')[0]
+          : Math.floor(q.date.getTime() / 1000);
+
+        return {
+          time,
+          open: parseFloat(q.open.toFixed(2)),
+          high: parseFloat(q.high.toFixed(2)),
+          low: parseFloat(q.low.toFixed(2)),
+          close: parseFloat(q.close.toFixed(2)),
+          volume: q.volume || 0,
+        };
+      });
+
+    const response = {
       success: true,
       symbol,
-      days,
-      data: rows.reverse(),
-    });
+      range,
+      interval: rangeConfig.interval,
+      data,
+    };
+
+    setCache(cacheKey, response);
+    res.json(response);
   } catch (err) {
-    logger.error('Stock history failed', { error: err.message });
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    logger.error('Chart data failed', { error: err.message, symbol: req.params.symbol });
+    res.status(500).json({ success: false, error: 'Failed to fetch chart data' });
+  }
+}
+
+// ════════════════════════════════════
+// GET /stocks/:symbol/forecast
+// On-demand analyst forecast from Yahoo Finance
+// ════════════════════════════════════
+async function getForecast(req, res) {
+  try {
+    const symbol = req.params.symbol.toUpperCase();
+
+    // Check cache first (10 min TTL for forecasts)
+    const cacheKey = `forecast:${symbol}`;
+    const cached = getCached(cacheKey, 600000);
+    if (cached) return res.json(cached);
+
+    const summary = await yf.quoteSummary(symbol, {
+      modules: ['earningsTrend', 'financialData', 'earnings']
+    });
+
+    const fd = summary.financialData || {};
+    const earnings = summary.earnings || {};
+    const earningsTrend = summary.earningsTrend?.trend || [];
+
+    // Extract analyst estimates
+    const currentQuarter = earningsTrend.find(t => t.period === '0q') || {};
+    const nextQuarter = earningsTrend.find(t => t.period === '+1q') || {};
+    const currentYear = earningsTrend.find(t => t.period === '0y') || {};
+    const nextYear = earningsTrend.find(t => t.period === '+1y') || {};
+
+    // Extract earnings history
+    const earningsHistory = earnings.earningsChart?.quarterly || [];
+
+    const response = {
+      success: true,
+      symbol,
+      data: {
+        // Target Price & Recommendation
+        target_price: {
+          current: fd.currentPrice || null,
+          mean: fd.targetMeanPrice || null,
+          low: fd.targetLowPrice || null,
+          high: fd.targetHighPrice || null,
+        },
+        recommendation: {
+          key: fd.recommendationKey || null,       // "buy", "hold", "sell"
+          mean: fd.recommendationMean || null,      // 1.0 (Strong Buy) to 5.0 (Strong Sell)
+          analysts: fd.numberOfAnalystOpinions || 0,
+        },
+
+        // EPS Estimates
+        eps_estimates: {
+          current_quarter: {
+            period: currentQuarter.period || '0q',
+            estimate: currentQuarter.earningsEstimate?.avg || null,
+            low: currentQuarter.earningsEstimate?.low || null,
+            high: currentQuarter.earningsEstimate?.high || null,
+            analysts: currentQuarter.earningsEstimate?.numberOfAnalysts || 0,
+          },
+          next_quarter: {
+            period: nextQuarter.period || '+1q',
+            estimate: nextQuarter.earningsEstimate?.avg || null,
+            low: nextQuarter.earningsEstimate?.low || null,
+            high: nextQuarter.earningsEstimate?.high || null,
+            analysts: nextQuarter.earningsEstimate?.numberOfAnalysts || 0,
+          },
+        },
+
+        // Revenue Estimates
+        revenue_estimates: {
+          current_quarter: {
+            period: currentQuarter.period || '0q',
+            estimate: currentQuarter.revenueEstimate?.avg || null,
+            low: currentQuarter.revenueEstimate?.low || null,
+            high: currentQuarter.revenueEstimate?.high || null,
+            analysts: currentQuarter.revenueEstimate?.numberOfAnalysts || 0,
+          },
+          next_quarter: {
+            period: nextQuarter.period || '+1q',
+            estimate: nextQuarter.revenueEstimate?.avg || null,
+            low: nextQuarter.revenueEstimate?.low || null,
+            high: nextQuarter.revenueEstimate?.high || null,
+            analysts: nextQuarter.revenueEstimate?.numberOfAnalysts || 0,
+          },
+        },
+
+        // Earnings History (Actual vs Estimate)
+        earnings_history: earningsHistory.map(e => ({
+          quarter: e.date,
+          actual: e.actual || null,
+          estimate: e.estimate || null,
+          surprise_pct: e.surprisePercent || null,
+        })),
+
+        // Yearly outlook
+        yearly_outlook: {
+          current_year: {
+            eps_estimate: currentYear.earningsEstimate?.avg || null,
+            revenue_estimate: currentYear.revenueEstimate?.avg || null,
+            growth: currentYear.growth?.raw || null,
+          },
+          next_year: {
+            eps_estimate: nextYear.earningsEstimate?.avg || null,
+            revenue_estimate: nextYear.revenueEstimate?.avg || null,
+            growth: nextYear.growth?.raw || null,
+          },
+        },
+      },
+    };
+
+    setCache(cacheKey, response);
+    res.json(response);
+  } catch (err) {
+    logger.error('Forecast failed', { error: err.message, symbol: req.params.symbol });
+    res.status(500).json({ success: false, error: 'Failed to fetch forecast data' });
   }
 }
 
@@ -357,4 +490,4 @@ async function getFinancialChartData(req, res) {
   }
 }
 
-module.exports = { screenStocks, getStockDetail, getStockHistory, getSectors, getFinancialChartData };
+module.exports = { screenStocks, getStockDetail, getChartData, getForecast, getSectors, getFinancialChartData };

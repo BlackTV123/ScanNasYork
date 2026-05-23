@@ -5,7 +5,7 @@
 const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/stockController');
-const { screenQuerySchema, symbolParamSchema, historyQuerySchema } = require('../validators');
+const { screenQuerySchema, symbolParamSchema, chartQuerySchema } = require('../validators');
 
 // Validation middleware
 function validate(schema, source = 'query') {
@@ -29,10 +29,13 @@ router.get('/sectors', controller.getSectors);
 // GET /api/v1/stocks/screen
 router.get('/screen', validate(screenQuerySchema), controller.screenStocks);
 
-// GET /api/v1/stocks/:symbol/history
-router.get('/:symbol/history', validate(symbolParamSchema, 'params'), controller.getStockHistory);
+// GET /api/v1/stocks/:symbol/chart — On-demand candlestick chart
+router.get('/:symbol/chart', validate(symbolParamSchema, 'params'), controller.getChartData);
 
-// GET /api/v1/stocks/:symbol/financial-chart (Mega Prompt Version)
+// GET /api/v1/stocks/:symbol/forecast — Analyst forecast
+router.get('/:symbol/forecast', validate(symbolParamSchema, 'params'), controller.getForecast);
+
+// GET /api/v1/stocks/:symbol/financial-chart
 router.get('/:symbol/financial-chart', validate(symbolParamSchema, 'params'), controller.getFinancialChartData);
 
 // GET /api/v1/stocks/:symbol

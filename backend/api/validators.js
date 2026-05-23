@@ -38,9 +38,8 @@ const symbolParamSchema = Joi.object({
   symbol: Joi.string().uppercase().min(1).max(10).required(),
 });
 
-const historyQuerySchema = Joi.object({
-  days: Joi.number().integer().min(7).max(365).default(30),
-  indicators: Joi.string().optional(), // comma-separated
+const chartQuerySchema = Joi.object({
+  range: Joi.string().valid('1d', '5d', '1w', '1m', '3m', '6m').default('3m'),
 });
 
-module.exports = { screenQuerySchema, symbolParamSchema, historyQuerySchema };
+module.exports = { screenQuerySchema, symbolParamSchema, chartQuerySchema };

@@ -110,11 +110,18 @@ npm run worker:fundamental -- --cron
 |--------|----------|-------------|
 | GET | `/api/v1/stocks/screen` | Multi-criteria screening |
 | GET | `/api/v1/stocks/sectors` | Available sectors list |
-| GET | `/api/v1/stocks/:symbol` | Stock detail & indicators |
-| GET | `/api/v1/stocks/:symbol/history` | Price history (Daily) |
+| GET | `/api/v1/stocks/:symbol` | Stock detail (pre-computed indicators) |
+| GET | `/api/v1/stocks/:symbol/chart` | On-demand candlestick price history (1d/5d/1w/1m/3m/6m) |
+| GET | `/api/v1/stocks/:symbol/forecast` | On-demand analyst target & EPS/revenue projections |
+| GET | `/api/v1/stocks/:symbol/financial-chart` | Chronological Revenue/EPS historical charts data |
 | GET | `/api/health` | Health check |
 
 ## Tech Stack
-- **Backend:** Node.js, Sequelize ORM, PostgreSQL
-- **Frontend:** Vanilla HTML/CSS/JS, Chart.js
+- **Backend:** Node.js, Express, Sequelize ORM, PostgreSQL
+- **Frontend:** Vanilla HTML/CSS/JS, TradingView Lightweight Charts (v4)
 - **Data:** Yahoo Finance (Technical/Fundamental), SEC EDGAR (Historical Fundamentals), Polygon.io (Reference)
+
+---
+
+## Detailed Requirements
+For complete System Overview, Functional Requirements (FR), and Non-Functional Requirements (NFR) specifications, refer to [system_requirements.md](file:///d:/ScanNasYork/ScanNasYork/system_requirements.md).
