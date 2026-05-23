@@ -65,6 +65,13 @@
             <span style="font-size:0.75rem;color:var(--text-muted)">Only Bullish</span>
           </div>
         </div>
+        <div class="filter-group">
+          <label>Base Building</label>
+          <div class="toggle-wrapper">
+            <div class="toggle-switch" id="toggle-base-building" role="switch" aria-label="Base Building filter" tabindex="0"></div>
+            <span style="font-size:0.75rem;color:var(--text-muted)">Find Tight Range</span>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -86,12 +93,12 @@
           <input type="number" id="filter-eps-max" placeholder="e.g. 50.00" step="0.01">
         </div>
         <div class="filter-group">
-          <label for="filter-rev-min">Revenue Min ($M)</label>
-          <input type="number" id="filter-rev-min" placeholder="e.g. 1000" step="100">
+          <label for="filter-rev-min">Min Revenue ($)</label>
+          <input type="text" id="filter-rev-min" placeholder="e.g. 50M, 1B">
         </div>
         <div class="filter-group">
-          <label for="filter-rev-max">Revenue Max ($M)</label>
-          <input type="number" id="filter-rev-max" placeholder="e.g. 500000" step="100">
+          <label for="filter-rev-max">Max Revenue ($)</label>
+          <input type="text" id="filter-rev-max" placeholder="e.g. 500M, 2T">
         </div>
         <div class="filter-group">
           <label for="filter-pe-max">P/E Ratio Max</label>
@@ -102,12 +109,24 @@
           <input type="number" id="filter-growth-min" placeholder="e.g. 10" step="1">
         </div>
         <div class="filter-group">
-          <label for="filter-mcap-min">Market Cap Min</label>
-          <input type="number" id="filter-mcap-min" placeholder="e.g. 1000000000" step="1000000">
+          <label for="filter-rev-growth-min">Min Rev Growth YoY (%)</label>
+          <input type="number" id="filter-rev-growth-min" placeholder="e.g. 20">
         </div>
         <div class="filter-group">
-          <label for="filter-mcap-max">Market Cap Max</label>
-          <input type="number" id="filter-mcap-max" placeholder="e.g. 3000000000000" step="1000000">
+          <label for="filter-rev-consecutive">Consecutive Rev Growth (Years)</label>
+          <input type="number" id="filter-rev-consecutive" placeholder="e.g. 3">
+        </div>
+        <div class="filter-group">
+          <label for="filter-target-upside">Min Target Upside (%)</label>
+          <input type="number" id="filter-target-upside" placeholder="e.g. 30">
+        </div>
+        <div class="filter-group">
+          <label for="filter-mcap-min">Min Market Cap ($)</label>
+          <input type="text" id="filter-mcap-min" placeholder="e.g. 500M, 3B">
+        </div>
+        <div class="filter-group">
+          <label for="filter-mcap-max">Max Market Cap ($)</label>
+          <input type="text" id="filter-mcap-max" placeholder="e.g. 10B, 2T">
         </div>
         <div class="filter-group">
           <label for="filter-sector">Sector</label>
@@ -140,11 +159,13 @@
           <th data-sort="company_name">Company <span class="sort-icon">▲</span></th>
           <th>Sector</th>
           <th data-sort="current_price" style="text-align:right">Price <span class="sort-icon">▲</span></th>
+          <th data-sort="target_mean_price" style="text-align:right">Target <span class="sort-icon">▲</span></th>
           <th style="text-align:right">Chg%</th>
           <th data-sort="rsi_14" style="text-align:right">RSI <span class="sort-icon">▲</span></th>
           <th data-sort="macd" style="text-align:right">MACD <span class="sort-icon">▲</span></th>
           <th data-sort="ttm_eps" style="text-align:right">EPS <span class="sort-icon">▲</span></th>
           <th data-sort="ttm_revenue" style="text-align:right">Revenue <span class="sort-icon">▲</span></th>
+          <th data-sort="revenue_yoy_growth" style="text-align:right">Rev YoY% (Streak) <span class="sort-icon">▲</span></th>
           <th data-sort="pe_ratio" style="text-align:right">P/E <span class="sort-icon">▲</span></th>
           <th data-sort="market_cap" style="text-align:right">Market Cap <span class="sort-icon">▲</span></th>
           <th data-sort="latest_eps_yoy_growth" style="text-align:right">YoY% <span class="sort-icon">▲</span></th>

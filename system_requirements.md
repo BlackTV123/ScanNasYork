@@ -86,7 +86,7 @@ Functional requirements describe the specific features and actions that the Scan
 
 ### 2.1 FR-1: Stock Screener Engine
 * **FR-1.1: Filter Multi-Criteria:** The system must filter stocks using combinations of fundamental and technical criteria:
-  - *Technical criteria:* RSI (7/14 range), MACD status (positive/negative histogram crossover).
+  - *Technical criteria:* RSI (7/14 range), MACD status (positive/negative histogram crossover), Base Building / Low Volatility (Bollinger Band Squeeze where bandwidth <= 5%).
   - *Fundamental criteria:* EPS range (TTM), EPS YoY Growth percentage, P/E Ratio range, Revenue range (TTM), Market Cap range.
   - *Sector/Industry:* Filter by sector categories.
   - *Text Search:* Case-insensitive search matching symbol or company name.
@@ -111,14 +111,12 @@ Functional requirements describe the specific features and actions that the Scan
   - Volume Histogram Series (synchronized on the same time scale).
 * **FR-3.2: Multi-Timeframe Period Selection:** Users must be able to switch chart views instantly with the following configuration specifications:
   
-  | Range Selector | Fetch Back Date Period | Data Interval | Chart Resolution |
+  | Timeframe Selector | Fetch Back Date Period | Data Interval | Chart Resolution |
   | :--- | :--- | :--- | :--- |
-  | **1D** | 1 Day | 5 Minutes (`5m`) | Intraday |
-  | **5D** | 5 Days | 15 Minutes (`15m`) | Intraday |
-  | **1W** | 7 Days | 30 Minutes (`30m`) | Intraday |
-  | **1M** | 30 Days | 1 Day (`1d`) | Daily Close |
-  | **3M** | 90 Days | 1 Day (`1d`) | Daily Close |
-  | **6M** | 180 Days | 1 Day (`1d`) | Daily Close |
+  | **1D** | All-time | 1 Day (`1d`) | Daily Close |
+  | **1W** | All-time | 1 Week (`1wk`) | Weekly Close |
+  | **1M** | All-time | 1 Month (`1mo`) | Monthly Close |
+  | **3M** | All-time | 3 Months (`3mo`) | Quarterly Close |
 
 * **FR-3.3: Proxy On-Demand Fetching:** Chart data must not be stored in the local database. The backend must query the Yahoo Finance API on-demand for the requested timeframe and format it dynamically for the frontend.
 

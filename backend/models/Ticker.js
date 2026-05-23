@@ -21,6 +21,9 @@ const Ticker = sequelize.define('Ticker', {
     type: DataTypes.STRING(255),
     allowNull: false,
   },
+  description: {
+    type: DataTypes.TEXT,
+  },
   sector: {
     type: DataTypes.STRING(100),
   },
@@ -38,6 +41,9 @@ const Ticker = sequelize.define('Ticker', {
   price_change_pct: {
     type: DataTypes.DECIMAL(5, 2),
   },
+  target_mean_price: {
+    type: DataTypes.FLOAT,
+  },
   volume: {
     type: DataTypes.BIGINT,
   },
@@ -45,6 +51,13 @@ const Ticker = sequelize.define('Ticker', {
   // ── Cached Fundamental (TTM) ──
   ttm_revenue: {
     type: DataTypes.BIGINT,
+  },
+  revenue_yoy_growth: {
+    type: DataTypes.FLOAT,
+  },
+  revenue_consecutive_years: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
   },
   ttm_eps: {
     type: DataTypes.DECIMAL(10, 2),

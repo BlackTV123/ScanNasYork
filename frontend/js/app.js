@@ -62,8 +62,27 @@
     });
 
     // Export CSV
-    document.getElementById('btn-export').addEventListener('click', () => {
-      exportCSV(lastData);
+    document.getElementById('btn-export').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-export');
+      const originalText = btn.innerHTML;
+      btn.innerHTML = '📥 Exporting...';
+      btn.disabled = true;
+      try {
+        const filters = gatherFilters();
+        filters.limit = 10000; // Fetch all results up to 10,000 for the CSV
+        filters.offset = 0;
+        const res = await screenStocks(filters);
+        if (res.success && res.data.length > 0) {
+          exportCSV(res.data);
+        } else {
+          showToast('No data to export', 'error');
+        }
+      } catch (err) {
+        showToast('Export failed: ' + err.message, 'error');
+      } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+      }
     });
 
     // Toggle switches
@@ -123,6 +142,26 @@
   // ── Gather Filters ──
   function gatherFilters() {
     const f = {};
+
+    const parseWithSuffix = (id) => {
+      const el = document.getElementById(id);
+      if (!el || !el.value) return undefined;
+
+      const str = el.value.toString().toUpperCase().trim();
+      let multiplier = 1;
+
+      if (str.endsWith('T')) multiplier = 1e12;      // Trillion (ล้านล้าน)
+      else if (str.endsWith('B')) multiplier = 1e9;  // Billion (พันล้าน)
+      else if (str.endsWith('M')) multiplier = 1e6;  // Million (ล้าน)
+      else if (str.endsWith('K')) multiplier = 1e3;  // Thousand (พัน)
+
+      // ลบตัวอักษรออกให้เหลือแต่ตัวเลขแล้วคูณด้วยหน่วย
+      const numStr = str.replace(/[TBMK]/g, '');
+      const num = parseFloat(numStr);
+
+      return isNaN(num) ? undefined : num * multiplier;
+    };
+
     const val = (id) => document.getElementById(id)?.value || undefined;
     const isActive = (id) => document.getElementById(id)?.classList.contains('active');
 
@@ -130,12 +169,15 @@
     f.rsi_max = val('filter-rsi-max');
     f.eps_min = val('filter-eps-min');
     f.eps_max = val('filter-eps-max');
-    f.revenue_min = val('filter-rev-min');
-    f.revenue_max = val('filter-rev-max');
+    f.revenue_min = parseWithSuffix('filter-rev-min');
+    f.revenue_max = parseWithSuffix('filter-rev-max');
+    f.market_cap_min = parseWithSuffix('filter-mcap-min');
+    f.market_cap_max = parseWithSuffix('filter-mcap-max');
     f.pe_ratio_max = val('filter-pe-max');
     f.eps_yoy_growth_min = val('filter-growth-min');
-    f.market_cap_min = val('filter-mcap-min');
-    f.market_cap_max = val('filter-mcap-max');
+    f.rev_growth_min = val('filter-rev-growth-min');
+    f.rev_consecutive_years = val('filter-rev-consecutive');
+    f.upside_min = val('filter-target-upside');
 
     const searchVal = val('filter-search');
     if (searchVal) f.search = searchVal;
@@ -144,6 +186,7 @@
     if (sector) f.sector = sector;
 
     if (isActive('toggle-macd')) f.macd_positive = true;
+    if (isActive('toggle-base-building')) f.building_base = true;
 
     f.sort_by = currentSort.by;
     f.sort_order = currentSort.order;
@@ -192,6 +235,7 @@
         <td class="cell-name" title="${row.company_name || ''}">${row.company_name || '—'}</td>
         <td><span class="cell-sector">${row.sector || '—'}</span></td>
         <td class="cell-number">${formatPrice(row.current_price)}</td>
+        <td class="cell-number">${row.target_mean_price ? formatPrice(row.target_mean_price) : '—'}</td>
         <td class="cell-number ${valueColorClass(row.price_change_pct)}">
           ${formatPct(row.price_change_pct)}
         </td>
@@ -203,6 +247,9 @@
         <td class="cell-number ${valueColorClass(row.macd)}">${row.macd != null ? parseFloat(row.macd).toFixed(4) : '—'}</td>
         <td class="cell-number">${row.ttm_eps != null ? formatNumber(row.ttm_eps) : '—'}</td>
         <td class="cell-number">${formatLargeNumber(row.ttm_revenue)}</td>
+        <td class="cell-number ${valueColorClass(row.revenue_yoy_growth)}">
+          ${formatPct(row.revenue_yoy_growth)} ${row.revenue_consecutive_years ? `<span style="font-size:0.8em; opacity:0.8">(${row.revenue_consecutive_years}y)</span>` : ''}
+        </td>
         <td class="cell-number">${row.pe_ratio != null ? formatNumber(row.pe_ratio) : '—'}</td>
         <td class="cell-number">${formatLargeNumber(row.market_cap)}</td>
         <td class="cell-number ${valueColorClass(row.latest_eps_yoy_growth)}">

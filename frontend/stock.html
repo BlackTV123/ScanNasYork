@@ -38,6 +38,9 @@
       <div class="symbol-badge" id="detail-symbol">—</div>
       <div class="company-name" id="detail-name">Loading...</div>
       <span class="cell-sector" id="detail-sector" style="margin-top:8px;display:inline-block">—</span>
+      <div class="stock-description" style="margin-top: 15px; color: #b2b5be; font-size: 0.95rem; line-height: 1.5; max-width: 800px;">
+        <p id="stock-desc-text">Fetching company profile...</p>
+      </div>
     </div>
     <div class="price-display">
       <div class="price-value" id="detail-price">—</div>
@@ -53,12 +56,10 @@
     <div class="chart-panel-header">
       <h2>Price Chart</h2>
       <div class="chart-range-buttons" id="chart-range-buttons">
-        <button data-range="1d">1D</button>
-        <button data-range="5d">5D</button>
+        <button data-range="1d" class="active">1D</button>
         <button data-range="1w">1W</button>
         <button data-range="1m">1M</button>
-        <button data-range="3m" class="active">3M</button>
-        <button data-range="6m">6M</button>
+        <button data-range="3m">3M</button>
       </div>
     </div>
     <div id="candlestick-chart"></div>
@@ -212,7 +213,7 @@
   let candlestickChart = null;
   let candlestickSeries = null;
   let volumeSeries = null;
-  let currentRange = '3m';
+  let currentRange = '1d';
 
   document.addEventListener('DOMContentLoaded', async () => {
     const overlay = document.getElementById('loading-overlay');
@@ -223,7 +224,7 @@
       const [detailRes, financialRes, chartRes] = await Promise.all([
         getStockDetail(symbol),
         fetch(`/api/v1/stocks/${symbol}/financial-chart`).then(r => r.json()),
-        getChartData(symbol, '3m'),
+        getChartData(symbol, '1d'),
       ]);
 
       if (detailRes.success) renderDetail(detailRes.data);
@@ -515,6 +516,7 @@
     document.getElementById('detail-symbol').textContent = data.symbol;
     document.getElementById('detail-name').textContent = data.company_name || '';
     document.getElementById('detail-sector').textContent = data.sector || '—';
+    document.getElementById('stock-desc-text').textContent = data.description || 'No company description available.';
 
     const price = data.current_metrics?.price;
     document.getElementById('detail-price').textContent = formatPrice(price);

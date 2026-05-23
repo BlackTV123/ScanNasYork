@@ -16,6 +16,7 @@ CREATE TABLE Tickers (
   id SERIAL PRIMARY KEY,
   symbol VARCHAR(10) UNIQUE NOT NULL,
   company_name VARCHAR(255) NOT NULL,
+  description TEXT,
   sector VARCHAR(100),
   industry VARCHAR(100),
   market_cap BIGINT,
@@ -23,10 +24,13 @@ CREATE TABLE Tickers (
   -- Current Price
   current_price DECIMAL(10, 2),
   price_change_pct DECIMAL(5, 2),
+  target_mean_price FLOAT,
   volume BIGINT,
 
   -- Cached Fundamental (TTM)
   ttm_revenue BIGINT,
+  revenue_yoy_growth FLOAT,
+  revenue_consecutive_years INTEGER DEFAULT 0,
   ttm_eps DECIMAL(10, 2),
   ttm_net_income BIGINT,
   latest_eps_yoy_growth DECIMAL(5, 2),

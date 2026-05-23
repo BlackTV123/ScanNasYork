@@ -287,22 +287,25 @@ async function runFundamentalWorker() {
             // Step 1: Parallel Yahoo Update (FAST)
             await Promise.all(batch.map(async (t) => {
                 try {
-                    const [quote, summary] = await Promise.all([
-                        yf.quote(t.symbol).catch(() => null),
-                        yf.quoteSummary(t.symbol, { modules: ['financialData', 'assetProfile'] }).catch(() => null)
-                    ]);
+                    const summary = await yf.quoteSummary(t.symbol, { modules: ['price', 'summaryProfile', 'financialData', 'defaultKeyStatistics', 'assetProfile'] });
+                    const priceData = summary.price || {};
+                    const profile = summary.summaryProfile || {};
+                    const fd = summary.financialData || {};
+                    const ks = summary.defaultKeyStatistics || {};
+                    const businessDesc = summary.assetProfile?.longBusinessSummary || null;
 
-                    if (quote && summary) {
-                        const fd = summary.financialData || {};
-                        const profile = summary.assetProfile || {};
+                    if (priceData && summary) {
                         await Ticker.update({
                             sector: profile.sector || null,
                             industry: profile.industry || null,
-                            market_cap: quote.marketCap || null,
-                            pe_ratio: quote.trailingPE || null,
-                            ttm_eps: quote.epsTrailingTwelveMonths || null,
+                            market_cap: priceData.marketCap || null,
+                            pe_ratio: priceData.trailingPE || null,
+                            ttm_eps: ks.trailingEps || null,
                             ttm_revenue: fd.totalRevenue || null,
                             latest_eps_yoy_growth: fd.earningsGrowth ? (fd.earningsGrowth * 100).toFixed(2) : null,
+                            revenue_yoy_growth: fd.revenueGrowth ? (fd.revenueGrowth * 100).toFixed(2) : null,
+                            target_mean_price: fd.targetMeanPrice || null,
+                            description: businessDesc,
                             last_fundamental_update: new Date()
                         }, { where: { symbol: t.symbol } });
                     }
@@ -352,8 +355,25 @@ async function runFundamentalWorker() {
                                 source_api: 'sec_edgar',
                             });
                         }
-                        await Ticker.update({ last_sec_update: new Date() }, { where: { symbol: t.symbol } });
-                        logger.debug(`[${processed + 1}/${totalTickers}] ✅ SEC + Yahoo: ${t.symbol} ${isEarningsDay ? '(EARNINGS DAY!)' : ''}`);
+
+                        // 💡 Calculate Consecutive Revenue Growth Years
+                        const annualStmts = await IncomeStatement.findAll({
+                            where: { symbol: t.symbol, period_type: 'Annual', revenue: { [Op.not]: null } },
+                            order: [['fiscal_year', 'DESC']],
+                            raw: true
+                        });
+                        
+                        let streak = 0;
+                        for (let j = 0; j < annualStmts.length - 1; j++) {
+                            if (BigInt(annualStmts[j].revenue) > BigInt(annualStmts[j+1].revenue)) {
+                                streak++;
+                            } else {
+                                break;
+                            }
+                        }
+
+                        await Ticker.update({ last_sec_update: new Date(), revenue_consecutive_years: streak }, { where: { symbol: t.symbol } });
+                        logger.debug(`[${processed + 1}/${totalTickers}] ✅ SEC + Yahoo: ${t.symbol} ${isEarningsDay ? '(EARNINGS DAY!)' : ''} - Streak: ${streak}`);
 
                         await sleep(110);
                     } catch (err) {

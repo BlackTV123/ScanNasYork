@@ -33,15 +33,14 @@ function setCache(key, data) {
 }
 
 // ════════════════════════════════════
-// Range → Yahoo period mapping
+// Timeframe → Yahoo period mapping (Native Only)
+// ทุกตัวเลือกจะดึงตั้งแต่วันแรกที่เปิดตลาด (1970-01-01)
 // ════════════════════════════════════
 const RANGE_MAP = {
-  '1d':  { days: 1,   interval: '5m'  },
-  '5d':  { days: 5,   interval: '15m' },
-  '1w':  { days: 7,   interval: '30m' },
-  '1m':  { days: 30,  interval: '1d'  },
-  '3m':  { days: 90,  interval: '1d'  },
-  '6m':  { days: 180, interval: '1d'  },
+  '1d':  { interval: '1d'  }, // แท่ง 1 วัน
+  '1w':  { interval: '1wk' }, // แท่ง 1 สัปดาห์
+  '1m':  { interval: '1mo' }, // แท่ง 1 เดือน
+  '3m':  { interval: '3mo' }  // แท่ง 3 เดือน (Timeframe ใหญ่สุดของ Yahoo)
 };
 
 // ════════════════════════════════════
@@ -61,8 +60,16 @@ async function screenStocks(req, res) {
     // Fundamental filters
     if (f.eps_min !== undefined) tickerWhere.ttm_eps = { ...tickerWhere.ttm_eps, [Op.gte]: parseFloat(f.eps_min) };
     if (f.eps_max !== undefined) tickerWhere.ttm_eps = { ...tickerWhere.ttm_eps, [Op.lte]: parseFloat(f.eps_max) };
-    if (f.revenue_min !== undefined) tickerWhere.ttm_revenue = { ...tickerWhere.ttm_revenue, [Op.gte]: parseFloat(f.revenue_min) * 1e6 };
-    if (f.revenue_max !== undefined) tickerWhere.ttm_revenue = { ...tickerWhere.ttm_revenue, [Op.lte]: parseFloat(f.revenue_max) * 1e6 };
+    if (f.revenue_min !== undefined) tickerWhere.ttm_revenue = { ...tickerWhere.ttm_revenue, [Op.gte]: parseFloat(f.revenue_min) };
+    if (f.revenue_max !== undefined) tickerWhere.ttm_revenue = { ...tickerWhere.ttm_revenue, [Op.lte]: parseFloat(f.revenue_max) };
+    if (f.rev_growth_min !== undefined) tickerWhere.revenue_yoy_growth = { [Op.gte]: parseFloat(f.rev_growth_min) };
+    if (f.rev_consecutive_years !== undefined) tickerWhere.revenue_consecutive_years = { [Op.gte]: parseInt(f.rev_consecutive_years, 10) };
+    if (f.upside_min !== undefined) {
+      tickerWhere[Op.and] = tickerWhere[Op.and] || [];
+      tickerWhere[Op.and].push(
+        sequelize.literal(`("current_price" > 0 AND "target_mean_price" > "current_price" AND (("target_mean_price" - "current_price") / "current_price" * 100) >= ${parseFloat(f.upside_min)})`)
+      );
+    }
     if (f.pe_ratio_min !== undefined) tickerWhere.pe_ratio = { ...tickerWhere.pe_ratio, [Op.gte]: parseFloat(f.pe_ratio_min) };
     if (f.pe_ratio_max !== undefined) tickerWhere.pe_ratio = { ...tickerWhere.pe_ratio, [Op.lte]: parseFloat(f.pe_ratio_max) };
     if (f.eps_yoy_growth_min !== undefined) tickerWhere.latest_eps_yoy_growth = { [Op.gte]: parseFloat(f.eps_yoy_growth_min) };
@@ -74,6 +81,14 @@ async function screenStocks(req, res) {
     if (f.rsi_min !== undefined) tickerWhere.rsi_14 = { ...tickerWhere.rsi_14, [Op.gte]: parseFloat(f.rsi_min) };
     if (f.rsi_max !== undefined) tickerWhere.rsi_14 = { ...tickerWhere.rsi_14, [Op.lte]: parseFloat(f.rsi_max) };
     if (f.macd_positive === 'true' || f.macd_positive === true) tickerWhere.macd = { [Op.gt]: 0 };
+
+    if (f.building_base === 'true' || f.building_base === true) {
+      // Bollinger Bandwidth <= 5% (ราคาบีบตัวแน่น สร้างฐาน)
+      tickerWhere[Op.and] = tickerWhere[Op.and] || [];
+      tickerWhere[Op.and].push(
+        sequelize.literal('("bb_middle" > 0 AND ("bb_upper" - "bb_lower") / "bb_middle" <= 0.05)')
+      );
+    }
 
     // Search
     if (f.search) {
@@ -98,7 +113,7 @@ async function screenStocks(req, res) {
         attributes: [
           'symbol', 'company_name', 'sector', 'industry',
           'market_cap', 'current_price', 'price_change_pct', 'volume',
-          'ttm_eps', 'ttm_revenue', 'pe_ratio', 'latest_eps_yoy_growth',
+          'target_mean_price', 'ttm_eps', 'ttm_revenue', 'revenue_yoy_growth', 'revenue_consecutive_years', 'pe_ratio', 'latest_eps_yoy_growth',
           'rsi_14', 'rsi_7', 'macd', 'macd_signal', 'macd_histogram',
           'bb_upper', 'bb_middle', 'bb_lower', 'atr_14',
           'last_technical_update'
@@ -118,10 +133,13 @@ async function screenStocks(req, res) {
       industry: t.industry,
       market_cap: t.market_cap,
       current_price: t.current_price,
+      target_mean_price: t.target_mean_price,
       price_change_pct: t.price_change_pct,
       volume: t.volume,
       ttm_eps: t.ttm_eps,
       ttm_revenue: t.ttm_revenue,
+      revenue_yoy_growth: t.revenue_yoy_growth,
+      revenue_consecutive_years: t.revenue_consecutive_years,
       ttm_net_income: t.ttm_net_income,
       latest_eps_yoy_growth: t.latest_eps_yoy_growth,
       pe_ratio: t.pe_ratio,
@@ -182,6 +200,7 @@ async function getStockDetail(req, res) {
       data: {
         symbol: ticker.symbol,
         company_name: ticker.company_name,
+        description: ticker.description,
         sector: ticker.sector,
         industry: ticker.industry,
         market_cap: ticker.market_cap,
@@ -239,27 +258,26 @@ async function getStockDetail(req, res) {
 async function getChartData(req, res) {
   try {
     const symbol = req.params.symbol.toUpperCase();
-    const range = (req.query.range || '3m').toLowerCase();
+    const range = (req.query.range || '1d').toLowerCase(); // Default เป็น 1D
 
     const rangeConfig = RANGE_MAP[range];
     if (!rangeConfig) {
       return res.status(400).json({
         success: false,
-        error: `Invalid range. Valid: ${Object.keys(RANGE_MAP).join(', ')}`
+        error: `Invalid timeframe. Valid: ${Object.keys(RANGE_MAP).join(', ')}`
       });
     }
 
-    // Check cache first
+    // Check cache
     const cacheKey = `chart:${symbol}:${range}`;
     const cached = getCached(cacheKey);
     if (cached) return res.json(cached);
 
-    // Calculate date range
-    const period1 = new Date();
-    period1.setDate(period1.getDate() - rangeConfig.days);
+    // 💡 ดึงตั้งแต่วันแรกที่เปิดตลาดเสมอ
+    const period1Str = '1970-01-01'; 
 
     const result = await yf.chart(symbol, {
-      period1: period1.toISOString().split('T')[0],
+      period1: period1Str,
       interval: rangeConfig.interval,
     });
 
@@ -267,18 +285,12 @@ async function getChartData(req, res) {
       return res.status(404).json({ success: false, error: 'No chart data available' });
     }
 
-    // Format for Lightweight Charts
+    // ฟอร์แมตข้อมูลส่งกลับไปให้ Lightweight Charts
     const data = result.quotes
       .filter(q => q.open != null && q.close != null)
       .map(q => {
-        // For intraday (1d, 5d, 1w), use unix timestamp
-        // For daily intervals, use date string
-        const time = rangeConfig.interval === '1d'
-          ? q.date.toISOString().split('T')[0]
-          : Math.floor(q.date.getTime() / 1000);
-
         return {
-          time,
+          time: q.date.toISOString().split('T')[0], // วันที่ YYYY-MM-DD
           open: parseFloat(q.open.toFixed(2)),
           high: parseFloat(q.high.toFixed(2)),
           low: parseFloat(q.low.toFixed(2)),
@@ -443,7 +455,7 @@ async function getSectors(req, res) {
 async function getFinancialChartData(req, res) {
   try {
     const symbol = req.params.symbol.toUpperCase();
-    
+
     // Fetch both Annual and Quarterly data
     const [quarterly, annual] = await Promise.all([
       IncomeStatement.findAll({

@@ -9,6 +9,7 @@ const screenQuerySchema = Joi.object({
   rsi_min: Joi.number().min(0).max(100).optional(),
   rsi_max: Joi.number().min(0).max(100).optional(),
   macd_positive: Joi.boolean().optional(),
+  building_base: Joi.boolean().optional(),
 
   // Fundamental Filters
   eps_min: Joi.number().optional(),
@@ -18,13 +19,16 @@ const screenQuerySchema = Joi.object({
   pe_ratio_min: Joi.number().optional(),
   pe_ratio_max: Joi.number().optional(),
   eps_yoy_growth_min: Joi.number().optional(),
+  rev_growth_min: Joi.number().optional(),
+  rev_consecutive_years: Joi.number().integer().optional(),
+  upside_min: Joi.number().optional(),
   market_cap_min: Joi.number().optional(),
   market_cap_max: Joi.number().optional(),
   sector: Joi.string().optional(),
   search: Joi.string().optional(),
 
   // Pagination / Sorting
-  limit: Joi.number().integer().min(1).max(500).default(50),
+  limit: Joi.number().integer().min(1).max(10000).default(50),
   offset: Joi.number().integer().min(0).default(0),
   sort_by: Joi.string().valid(
     'symbol', 'company_name', 'current_price', 'rsi_14',
@@ -39,7 +43,7 @@ const symbolParamSchema = Joi.object({
 });
 
 const chartQuerySchema = Joi.object({
-  range: Joi.string().valid('1d', '5d', '1w', '1m', '3m', '6m').default('3m'),
+  range: Joi.string().valid('1d', '1w', '1m', '3m').default('1d'),
 });
 
 module.exports = { screenQuerySchema, symbolParamSchema, chartQuerySchema };
