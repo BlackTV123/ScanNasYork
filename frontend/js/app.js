@@ -12,6 +12,7 @@
   let pageSize = 50;
   let totalResults = 0;
   let lastData = [];
+  let favoritesOnly = false;
 
   // DOM refs
   const resultsBody = document.getElementById('results-body');
@@ -26,6 +27,7 @@
     setupPanelToggles();
     setupFilterListeners();
     setupSortHeaders();
+    setupWatchlistFilters();
     loadSectors();
     await runScreen();
   });
@@ -187,6 +189,7 @@
 
     if (isActive('toggle-macd')) f.macd_positive = true;
     if (isActive('toggle-base-building')) f.building_base = true;
+    if (favoritesOnly) f.favorites_only = true;
 
     f.sort_by = currentSort.by;
     f.sort_order = currentSort.order;
@@ -231,6 +234,9 @@
 
     resultsBody.innerHTML = data.map(row => `
       <tr onclick="window.location.href='/stock.html?symbol=${row.symbol}'" title="View ${row.symbol} details">
+        <td class="cell-star" onclick="event.stopPropagation(); window.__toggleStar('${row.symbol}', this)">
+          <span class="star-btn ${row.is_favorite ? 'starred active' : ''}" title="Toggle watchlist">${row.is_favorite ? '★' : '☆'}</span>
+        </td>
         <td class="cell-symbol">${row.symbol}</td>
         <td class="cell-name" title="${row.company_name || ''}">${row.company_name || '—'}</td>
         <td><span class="cell-sector">${row.sector || '—'}</span></td>
@@ -305,6 +311,72 @@
     runScreen();
     window.scrollTo({ top: document.querySelector('.table-container')?.offsetTop - 100, behavior: 'smooth' });
   };
+
+  // Expose toggleStar globally
+  window.__toggleStar = async (symbol, cell) => {
+    const starBtn = cell.querySelector('.star-btn');
+    if (!starBtn) return;
+    
+    try {
+      starBtn.classList.add('star-pop');
+      const res = await toggleFavorite(symbol);
+      if (res.success) {
+        const isFav = res.is_favorite;
+        starBtn.classList.toggle('starred', isFav);
+        starBtn.classList.toggle('active', isFav);
+        starBtn.textContent = isFav ? '★' : '☆';
+      }
+    } catch (err) {
+      if (window.showToast) {
+        window.showToast('Failed to toggle favorite: ' + err.message, 'error');
+      } else {
+        alert('Failed to toggle favorite: ' + err.message);
+      }
+    } finally {
+      setTimeout(() => starBtn.classList.remove('star-pop'), 300);
+    }
+  };
+
+  // ── Watchlist Filters ──
+  function setupWatchlistFilters() {
+    const btnWatchlist = document.getElementById('btn-watchlist');
+    const thStarFilter = document.getElementById('th-star-filter');
+
+    const toggleWatchlistMode = () => {
+      favoritesOnly = !favoritesOnly;
+
+      // Update navbar button styles
+      if (btnWatchlist) {
+        btnWatchlist.classList.toggle('active', favoritesOnly);
+        const icon = btnWatchlist.querySelector('.watchlist-icon');
+        if (icon) {
+          icon.style.color = favoritesOnly ? 'var(--color-star)' : 'var(--text-muted)';
+        }
+      }
+
+      // Update table header styles
+      if (thStarFilter) {
+        thStarFilter.classList.toggle('active', favoritesOnly);
+      }
+
+      currentPage = 0;
+      runScreen();
+    };
+
+    if (btnWatchlist) {
+      btnWatchlist.addEventListener('click', (e) => {
+        e.preventDefault();
+        toggleWatchlistMode();
+      });
+    }
+
+    if (thStarFilter) {
+      thStarFilter.addEventListener('click', (e) => {
+        e.preventDefault();
+        toggleWatchlistMode();
+      });
+    }
+  }
 
   // ── Loading ──
   function showLoading(show) {

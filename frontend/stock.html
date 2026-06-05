@@ -35,7 +35,10 @@
   <!-- STOCK HEADER -->
   <div class="stock-header" id="stock-header">
     <div>
-      <div class="symbol-badge" id="detail-symbol">—</div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <div class="symbol-badge" id="detail-symbol">—</div>
+        <button id="fav-star-btn" class="fav-star-btn" aria-label="Toggle Favorite" title="Add to Watchlist" style="background: none; border: none; font-size: 1.8rem; cursor: pointer; color: var(--text-muted); line-height: 1; transition: transform 0.2s, color 0.2s; padding: 0;">☆</button>
+      </div>
       <div class="company-name" id="detail-name">Loading...</div>
       <span class="cell-sector" id="detail-sector" style="margin-top:8px;display:inline-block">—</span>
       <div class="stock-description" style="margin-top: 15px; color: #b2b5be; font-size: 0.95rem; line-height: 1.5; max-width: 800px;">
@@ -282,14 +285,14 @@
     
     candlestickChart = LightweightCharts.createChart(container, {
       layout: {
-        background: { type: 'solid', color: '#1a1f2e' },
-        textColor: '#94a3b8',
+        background: { type: 'solid', color: '#0b0f19' },
+        textColor: '#9ca3af',
         fontFamily: "'Inter', sans-serif",
         fontSize: 11,
       },
       grid: {
-        vertLines: { color: 'rgba(148, 163, 184, 0.06)' },
-        horzLines: { color: 'rgba(148, 163, 184, 0.06)' },
+        vertLines: { color: 'rgba(99, 102, 241, 0.06)' },
+        horzLines: { color: 'rgba(99, 102, 241, 0.06)' },
       },
       crosshair: {
         mode: LightweightCharts.CrosshairMode.Normal,
@@ -297,25 +300,33 @@
           color: 'rgba(99, 102, 241, 0.4)',
           width: 1,
           style: LightweightCharts.LineStyle.Dashed,
-          labelBackgroundColor: '#6366f1',
+          labelBackgroundColor: '#10b981',
         },
         horzLine: {
           color: 'rgba(99, 102, 241, 0.4)',
           width: 1,
           style: LightweightCharts.LineStyle.Dashed,
-          labelBackgroundColor: '#6366f1',
+          labelBackgroundColor: '#10b981',
         },
       },
       rightPriceScale: {
-        borderColor: 'rgba(148, 163, 184, 0.1)',
+        borderColor: 'rgba(99, 102, 241, 0.1)',
         scaleMargins: { top: 0.1, bottom: 0.25 },
       },
       timeScale: {
-        borderColor: 'rgba(148, 163, 184, 0.1)',
+        borderColor: 'rgba(99, 102, 241, 0.1)',
         timeVisible: chartRes.interval !== '1d',
         secondsVisible: false,
       },
       handleScroll: { vertTouchDrag: false },
+    });
+
+    // Set layout options for dark theme
+    candlestickChart.priceScale('right').applyOptions({
+      textColor: '#9ca3af',
+    });
+    candlestickChart.timeScale().applyOptions({
+      textColor: '#9ca3af',
     });
 
     // Candlestick series
@@ -518,6 +529,32 @@
     document.getElementById('detail-sector').textContent = data.sector || '—';
     document.getElementById('stock-desc-text').textContent = data.description || 'No company description available.';
 
+    // Set favorite star state
+    const starBtn = document.getElementById('fav-star-btn');
+    if (starBtn) {
+      const isFav = data.is_favorite;
+      starBtn.classList.toggle('starred', isFav);
+      starBtn.classList.toggle('active', isFav);
+      starBtn.textContent = isFav ? '★' : '☆';
+      
+      starBtn.onclick = async () => {
+        try {
+          starBtn.classList.add('star-pop');
+          const res = await toggleFavorite(data.symbol);
+          if (res.success) {
+            const nextFav = res.is_favorite;
+            starBtn.classList.toggle('starred', nextFav);
+            starBtn.classList.toggle('active', nextFav);
+            starBtn.textContent = nextFav ? '★' : '☆';
+          }
+        } catch (err) {
+          alert('Failed to toggle favorite: ' + err.message);
+        } finally {
+          setTimeout(() => starBtn.classList.remove('star-pop'), 300);
+        }
+      };
+    }
+
     const price = data.current_metrics?.price;
     document.getElementById('detail-price').textContent = formatPrice(price);
 
@@ -693,7 +730,7 @@
     }
 
     const labelText = window._fpMetric === 'revenue' ? 'Revenue (Billion $)' : 'EPS ($)';
-    const barColor = window._fpMetric === 'revenue' ? '#6366f1' : '#8b5cf6';
+    const barColor = window._fpMetric === 'revenue' ? '#10b981' : '#6366f1';
 
     const formatCurrency = (val, isBillion) => {
       if (val == null) return 'N/A';
@@ -717,13 +754,13 @@
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { labels: { color: '#FFFFFF', font: { weight: 'bold' } } },
+          legend: { labels: { color: '#f3f4f6', font: { weight: 'bold' } } },
           tooltip: {
-            backgroundColor: '#1a1f2e',
-            borderColor: 'rgba(148,163,184,0.15)',
+            backgroundColor: '#0b0f19',
+            borderColor: 'rgba(99, 102, 241, 0.2)',
             borderWidth: 1,
-            titleColor: '#FFFFFF',
-            bodyColor: '#FFFFFF',
+            titleColor: '#f3f4f6',
+            bodyColor: '#f3f4f6',
             titleFont: { family: 'JetBrains Mono' },
             bodyFont: { family: 'JetBrains Mono' },
             callbacks: {
@@ -734,15 +771,15 @@
           }
         },
         scales: {
-          x: { ticks: { color: '#FFFFFF' }, grid: { color: 'rgba(255,255,255,0.1)' } },
+          x: { ticks: { color: '#9ca3af' }, grid: { color: 'rgba(99, 102, 241, 0.08)' } },
           y: { 
             ticks: { 
-                color: '#FFFFFF',
+                color: '#9ca3af',
                 callback: function(value) {
                     return formatCurrency(value, window._fpMetric === 'revenue');
                 }
             }, 
-            grid: { color: 'rgba(255,255,255,0.1)' } 
+            grid: { color: 'rgba(99, 102, 241, 0.08)' } 
           }
         }
       }

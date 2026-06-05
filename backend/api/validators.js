@@ -10,6 +10,7 @@ const screenQuerySchema = Joi.object({
   rsi_max: Joi.number().min(0).max(100).optional(),
   macd_positive: Joi.boolean().optional(),
   building_base: Joi.boolean().optional(),
+  favorites_only: Joi.boolean().optional(),
 
   // Fundamental Filters
   eps_min: Joi.number().optional(),

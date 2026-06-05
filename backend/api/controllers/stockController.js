@@ -76,6 +76,9 @@ async function screenStocks(req, res) {
     if (f.market_cap_min !== undefined) tickerWhere.market_cap = { ...tickerWhere.market_cap, [Op.gte]: parseFloat(f.market_cap_min) };
     if (f.market_cap_max !== undefined) tickerWhere.market_cap = { ...tickerWhere.market_cap, [Op.lte]: parseFloat(f.market_cap_max) };
     if (f.sector) tickerWhere.sector = f.sector;
+    if (f.favorites_only === 'true' || f.favorites_only === true) {
+      tickerWhere.is_favorite = true;
+    }
 
     // Technical filters — now directly on Tickers!
     if (f.rsi_min !== undefined) tickerWhere.rsi_14 = { ...tickerWhere.rsi_14, [Op.gte]: parseFloat(f.rsi_min) };
@@ -116,7 +119,7 @@ async function screenStocks(req, res) {
           'target_mean_price', 'ttm_eps', 'ttm_revenue', 'revenue_yoy_growth', 'revenue_consecutive_years', 'pe_ratio', 'latest_eps_yoy_growth',
           'rsi_14', 'rsi_7', 'macd', 'macd_signal', 'macd_histogram',
           'bb_upper', 'bb_middle', 'bb_lower', 'atr_14',
-          'last_technical_update'
+          'is_favorite', 'last_technical_update'
         ],
         where: tickerWhere,
         order,
@@ -152,6 +155,7 @@ async function screenStocks(req, res) {
       bb_middle: t.bb_middle,
       bb_lower: t.bb_lower,
       atr_14: t.atr_14,
+      is_favorite: t.is_favorite === true || t.is_favorite === 1 || t.is_favorite === 'true',
       metrics_date: t.last_technical_update,
     }));
 
@@ -204,6 +208,7 @@ async function getStockDetail(req, res) {
         sector: ticker.sector,
         industry: ticker.industry,
         market_cap: ticker.market_cap,
+        is_favorite: ticker.is_favorite === true || ticker.is_favorite === 1 || ticker.is_favorite === 'true',
         // Technical data now comes directly from Tickers
         current_metrics: {
           price: ticker.current_price,
@@ -502,4 +507,34 @@ async function getFinancialChartData(req, res) {
   }
 }
 
-module.exports = { screenStocks, getStockDetail, getChartData, getForecast, getSectors, getFinancialChartData };
+// ════════════════════════════════════
+// POST /stocks/:symbol/favorite
+// Toggle stock favorite status
+// ════════════════════════════════════
+async function toggleFavorite(req, res) {
+  try {
+    const symbol = req.params.symbol.toUpperCase();
+    const ticker = await Ticker.findOne({ where: { symbol } });
+    if (!ticker) {
+      return res.status(404).json({ success: false, error: 'Stock not found' });
+    }
+    
+    // Toggle the favorite status
+    const nextState = !ticker.is_favorite;
+    await Ticker.update({ is_favorite: nextState }, { where: { symbol } });
+    
+    // Clear cache if needed since favorites state changed
+    cache.clear(); 
+
+    res.json({
+      success: true,
+      symbol,
+      is_favorite: nextState
+    });
+  } catch (err) {
+    logger.error('Failed to toggle favorite', { error: err.message, symbol: req.params.symbol });
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+}
+
+module.exports = { screenStocks, getStockDetail, getChartData, getForecast, getSectors, getFinancialChartData, toggleFavorite };

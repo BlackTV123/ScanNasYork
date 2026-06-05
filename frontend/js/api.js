@@ -43,6 +43,19 @@ async function getSectors() {
   return apiRequest('/stocks/sectors');
 }
 
+/** Toggle favorite status in database */
+async function toggleFavorite(symbol) {
+  const response = await fetch(`${API_BASE}/stocks/${symbol.toUpperCase()}/favorite`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(err.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
 /** Health check */
 async function healthCheck() {
   return apiRequest('/health');

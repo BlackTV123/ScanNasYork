@@ -46,6 +46,7 @@ CREATE TABLE Tickers (
   bb_middle DECIMAL(10, 2),
   bb_lower DECIMAL(10, 2),
   atr_14 DECIMAL(10, 2),
+  is_favorite BOOLEAN DEFAULT FALSE,
 
   -- Metadata
   last_technical_update TIMESTAMP,

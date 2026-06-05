@@ -8,20 +8,20 @@
 /* ── CSS Variables ── */
 :root {
   /* Background layers */
-  --bg-primary: #0a0e17;
-  --bg-secondary: #111827;
-  --bg-card: #1a1f2e;
-  --bg-card-hover: #222840;
-  --bg-surface: #151b2b;
-  --bg-input: #0f1420;
+  --bg-primary: #030712;
+  --bg-secondary: #0b0f19;
+  --bg-card: #0b0f19;
+  --bg-card-hover: #161d30;
+  --bg-surface: #0b0f19;
+  --bg-input: #0b0f19;
   --bg-overlay: rgba(0, 0, 0, 0.6);
 
-  /* Accent palette */
-  --accent-primary: #6366f1;
-  --accent-primary-hover: #818cf8;
-  --accent-secondary: #22d3ee;
-  --accent-gradient: linear-gradient(135deg, #6366f1, #8b5cf6, #a78bfa);
-  --accent-glow: 0 0 20px rgba(99, 102, 241, 0.3);
+  /* Accent palette (Obsidian & Emerald Glassmorphism) */
+  --accent-primary: #10b981;
+  --accent-primary-hover: #34d399;
+  --accent-secondary: #6366f1;
+  --accent-gradient: linear-gradient(135deg, #10b981, #3b82f6, #6366f1);
+  --accent-glow: 0 0 20px rgba(16, 185, 129, 0.3);
 
   /* Semantic colors */
   --color-bullish: #10b981;
@@ -30,17 +30,18 @@
   --color-bearish-bg: rgba(239, 68, 68, 0.12);
   --color-neutral: #f59e0b;
   --color-neutral-bg: rgba(245, 158, 11, 0.12);
+  --color-star: #fbbf24;
 
   /* Text */
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --text-accent: #a5b4fc;
+  --text-primary: #f3f4f6;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  --text-accent: #10b981;
 
   /* Borders */
-  --border-subtle: rgba(148, 163, 184, 0.08);
-  --border-default: rgba(148, 163, 184, 0.15);
-  --border-active: rgba(99, 102, 241, 0.5);
+  --border-subtle: rgba(99, 102, 241, 0.08);
+  --border-default: rgba(99, 102, 241, 0.15);
+  --border-active: #10b981;
 
   /* Spacing */
   --space-xs: 4px;
@@ -60,7 +61,7 @@
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
   --shadow-lg: 0 8px 32px rgba(0,0,0,0.5);
-  --shadow-glow: 0 0 30px rgba(99,102,241,0.15);
+  --shadow-glow: 0 0 30px rgba(59,130,246,0.15);
 
   /* Typography */
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -84,6 +85,7 @@ html {
 
 body {
   font-family: var(--font-sans);
+  font-weight: 500;
   background: var(--bg-primary);
   color: var(--text-primary);
   line-height: 1.6;
@@ -98,8 +100,8 @@ body::before {
   top: 0; left: 0;
   width: 100%; height: 100%;
   background:
-    radial-gradient(ellipse at 20% 20%, rgba(99,102,241,0.06) 0%, transparent 60%),
-    radial-gradient(ellipse at 80% 80%, rgba(34,211,238,0.04) 0%, transparent 60%);
+    radial-gradient(ellipse at 20% 20%, rgba(16, 185, 129, 0.06) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 80%, rgba(99, 102, 241, 0.04) 0%, transparent 60%);
   pointer-events: none;
   z-index: 0;
 }
@@ -1136,3 +1138,90 @@ a:hover { color: var(--accent-primary-hover); }
 
 /* mb-4 utility */
 .mb-4 { margin-bottom: var(--space-xl); }
+
+/* Watchlist / Star System */
+.cell-star {
+  text-align: center;
+  vertical-align: middle;
+  padding: 0 !important;
+  width: 50px;
+}
+
+.star-btn {
+  background: none;
+  border: none;
+  font-size: 1.25rem;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: transform 0.15s ease, color 0.15s ease;
+  user-select: none;
+  display: inline-block;
+  line-height: 1;
+}
+
+.star-btn:hover {
+  color: var(--color-star);
+  transform: scale(1.2);
+}
+
+.star-btn.starred,
+.star-btn.active {
+  color: var(--color-star);
+  text-shadow: 0 0 8px rgba(250, 204, 21, 0.4);
+}
+
+/* Detail page star button styles */
+.fav-star-btn {
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.fav-star-btn:hover {
+  color: var(--color-star) !important;
+  transform: scale(1.2);
+}
+
+.fav-star-btn.starred,
+.fav-star-btn.active {
+  color: var(--color-star) !important;
+  text-shadow: 0 0 10px rgba(250, 204, 21, 0.5);
+}
+
+/* Star Pop Micro-animation */
+@keyframes starPop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.4); }
+  100% { transform: scale(1); }
+}
+
+.star-pop {
+  animation: starPop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Watchlist header filter & button styling */
+.th-star-filter {
+  transition: color 0.2s ease, text-shadow 0.2s ease;
+  user-select: none;
+  color: var(--text-muted);
+}
+
+.th-star-filter:hover {
+  color: var(--color-star);
+}
+
+.th-star-filter.active {
+  color: var(--color-star);
+  text-shadow: 0 0 10px rgba(251, 191, 36, 0.6);
+}
+
+.btn-watchlist:hover {
+  background: var(--bg-card-hover) !important;
+  border-color: var(--color-star) !important;
+  color: var(--text-primary) !important;
+}
+
+.btn-watchlist.active {
+  border-color: var(--color-star) !important;
+  background: rgba(251, 191, 36, 0.08) !important;
+  color: var(--color-star) !important;
+  box-shadow: 0 0 12px rgba(251, 191, 36, 0.15);
+}

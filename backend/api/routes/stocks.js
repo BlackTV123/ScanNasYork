@@ -41,4 +41,7 @@ router.get('/:symbol/financial-chart', validate(symbolParamSchema, 'params'), co
 // GET /api/v1/stocks/:symbol
 router.get('/:symbol', validate(symbolParamSchema, 'params'), controller.getStockDetail);
 
+// POST /api/v1/stocks/:symbol/favorite — Toggle favorite
+router.post('/:symbol/favorite', validate(symbolParamSchema, 'params'), controller.toggleFavorite);
+
 module.exports = router;

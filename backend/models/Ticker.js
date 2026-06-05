@@ -100,6 +100,11 @@ const Ticker = sequelize.define('Ticker', {
   atr_14: {
     type: DataTypes.DECIMAL(10, 2),
   },
+  is_favorite: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    allowNull: false,
+  },
 
   // ── Metadata ──
   last_technical_update: {
