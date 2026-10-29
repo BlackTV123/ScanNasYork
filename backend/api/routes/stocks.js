@@ -30,6 +30,8 @@ router.get('/sectors', controller.getSectors);
 router.get('/screen', validate(screenQuerySchema), controller.screenStocks);
 
 // GET /api/v1/stocks/:symbol/chart — On-demand candlestick chart
+router.get('/:symbol/snapshot', validate(symbolParamSchema, 'params'), controller.getStockSnapshot);
+
 router.get('/:symbol/chart', validate(symbolParamSchema, 'params'), controller.getChartData);
 
 // GET /api/v1/stocks/:symbol/forecast — Analyst forecast

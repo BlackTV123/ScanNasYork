@@ -2,20 +2,63 @@
  * Stock Controller — Hybrid Architecture Version
  * 
  * Changes:
- * - screenStocks(): reads technical data directly from Tickers (no DailyMetric JOIN)
+ * - screenStocks(): reads technical data directly from Tickers
  * - getStockDetail(): reads technical data from Tickers
  * - getChartData(): NEW — on-demand candlestick data from Yahoo Finance
  * - getForecast(): NEW — analyst forecast/estimates from Yahoo Finance
- * - getStockHistory(): REMOVED (deprecated with Daily_Metrics)
  */
 
 const { Op, fn, col, literal } = require('sequelize');
 const { Ticker, IncomeStatement, sequelize } = require('../../models');
 const logger = require('../../utils/logger');
+const { buildForecastResponse } = require('../../services/stocks/forecast-data');
 
 // Yahoo Finance for on-demand data
 const YahooFinance = require('yahoo-finance2').default;
 const yf = new YahooFinance({ suppressNotices: ['yahooSurvey', 'ripHistorical'] });
+
+const { createChartDataService } = require('../../services/stocks/chart-data');
+const chartDataService = createChartDataService({
+  yahoo: yf, ticker: Ticker,
+  calculateIndicators: require('../../utils/indicators').calculateAll,
+  onPriceUpdated: () => {
+    for (const key of cache.keys()) if (key.startsWith('screen:')) cache.delete(key);
+  },
+});
+
+const stockSources = require('../../services/stocks/stock-sources').createStockSources({
+  yahoo: yf, ticker: Ticker, incomeStatement: IncomeStatement, sequelize,
+  sec: require('../../services/stocks/sec-data'),
+});
+const stockSnapshotService = require('../../services/stocks/stock-snapshot').createStockSnapshotService({
+  exists: symbol => Ticker.findOne({ where: { symbol }, attributes: ['symbol'], raw: true }),
+  chart: symbol => chartDataService.get(symbol, '1d', '1d', { refresh: true }),
+  fundamentals: async symbol => {
+    const response = await stockSources.fundamentals(symbol);
+    setCache(`forecast:${symbol}`, response);
+    return response;
+  },
+  financials: symbol => stockSources.financials(symbol),
+  readDetail: readStockDetail,
+  readFinancials: readFinancialChartData,
+  onSourceError: (source, symbol, error) => logger.warn('Partial stock refresh failure', {
+    source, symbol, error: error.message,
+  }),
+  onUpdated: () => {
+    for (const key of cache.keys()) if (key.startsWith('screen:')) cache.delete(key);
+  },
+});
+
+async function getStockSnapshot(req, res) {
+  try {
+    const snapshot = await stockSnapshotService.get(req.params.symbol.toUpperCase());
+    res.set('Cache-Control', 'no-store');
+    res.json(snapshot);
+  } catch (error) {
+    logger.error('Stock snapshot failed', { symbol: req.params.symbol, error: error.message });
+    res.status(error.status || 500).json({ success: false, error: error.status === 404 ? error.message : 'Failed to refresh stock data' });
+  }
+}
 
 // Simple in-memory cache
 const cache = new Map();
@@ -67,7 +110,7 @@ async function screenStocks(req, res) {
     if (f.upside_min !== undefined) {
       tickerWhere[Op.and] = tickerWhere[Op.and] || [];
       tickerWhere[Op.and].push(
-        sequelize.literal(`("current_price" > 0 AND "target_mean_price" > "current_price" AND (("target_mean_price" - "current_price") / "current_price" * 100) >= ${parseFloat(f.upside_min)})`)
+        sequelize.literal(`(current_price > 0 AND target_mean_price > current_price AND ((target_mean_price - current_price) / current_price * 100) >= ${parseFloat(f.upside_min)})`)
       );
     }
     if (f.pe_ratio_min !== undefined) tickerWhere.pe_ratio = { ...tickerWhere.pe_ratio, [Op.gte]: parseFloat(f.pe_ratio_min) };
@@ -89,27 +132,37 @@ async function screenStocks(req, res) {
       // Bollinger Bandwidth <= 5% (ราคาบีบตัวแน่น สร้างฐาน)
       tickerWhere[Op.and] = tickerWhere[Op.and] || [];
       tickerWhere[Op.and].push(
-        sequelize.literal('("bb_middle" > 0 AND ("bb_upper" - "bb_lower") / "bb_middle" <= 0.05)')
+        sequelize.literal('(bb_middle > 0 AND (bb_upper - bb_lower) / bb_middle <= 0.05)')
       );
     }
 
     // Search
     if (f.search) {
-      tickerWhere[Op.or] = [
-        { symbol: { [Op.iLike]: `%${f.search}%` } },
-        { company_name: { [Op.iLike]: `%${f.search}%` } }
-      ];
+      const search = f.search.trim();
+      const exactTicker = await Ticker.findOne({ where: { symbol: search.toUpperCase() }, attributes: ['symbol'], raw: true });
+      if (exactTicker) {
+        // A complete ticker is intentional: other filters still apply, without
+        // falling back to unrelated company names if that ticker is filtered out.
+        tickerWhere.symbol = exactTicker.symbol;
+      } else {
+        const escaped = search.replace(/[\\%_]/g, '\\$&');
+        tickerWhere[Op.or] = [
+          { symbol: { [Op.like]: `%${escaped}%` } },
+          { company_name: { [Op.like]: `%${escaped}%` } }
+        ];
+      }
     }
 
     const limit = parseInt(f.limit, 10) || 50;
     const offset = parseInt(f.offset, 10) || 0;
 
     // Sort mapping
-    const sort_by = f.sort_by || 'symbol';
-    const sort_order = f.sort_order || 'ASC';
-    const order = [sequelize.literal(`"${sort_by}" ${sort_order} NULLS LAST`)];
+    const sort_by = Object.hasOwn(Ticker.rawAttributes, f.sort_by) ? f.sort_by : 'symbol';
+    const sort_order = String(f.sort_order).toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+    const quotedSort = sequelize.getQueryInterface().queryGenerator.quoteIdentifier(sort_by);
+    const order = [sequelize.literal(`${quotedSort} IS NULL ASC`), [sort_by, sort_order]];
 
-    // Count + Fetch in parallel — NO MORE DailyMetric JOIN!
+    // Count and fetch current ticker fields in parallel.
     const [total, tickers] = await Promise.all([
       Ticker.count({ where: tickerWhere }),
       Ticker.findAll({
@@ -179,81 +232,85 @@ async function screenStocks(req, res) {
 // ════════════════════════════════════
 async function getStockDetail(req, res) {
   try {
-    const symbol = req.params.symbol.toUpperCase();
-
-    const [ticker, quarterly, annual] = await Promise.all([
-      Ticker.findOne({ where: { symbol }, raw: true }),
-      IncomeStatement.findAll({
-        where: { symbol, period_type: 'Quarterly' },
-        order: [['fiscal_year', 'DESC'], ['fiscal_period', 'DESC']],
-        limit: 32,
-        raw: true,
-      }),
-      IncomeStatement.findAll({
-        where: { symbol, period_type: 'Annual' },
-        order: [['fiscal_year', 'DESC']],
-        limit: 8,
-        raw: true,
-      }),
-    ]);
-
-    if (!ticker) return res.status(404).json({ success: false, error: 'Stock not found' });
-
-    res.json({
-      success: true,
-      data: {
-        symbol: ticker.symbol,
-        company_name: ticker.company_name,
-        description: ticker.description,
-        sector: ticker.sector,
-        industry: ticker.industry,
-        market_cap: ticker.market_cap,
-        is_favorite: ticker.is_favorite === true || ticker.is_favorite === 1 || ticker.is_favorite === 'true',
-        // Technical data now comes directly from Tickers
-        current_metrics: {
-          price: ticker.current_price,
-          price_change_pct: ticker.price_change_pct,
-          volume: ticker.volume,
-          rsi_14: ticker.rsi_14,
-          rsi_7: ticker.rsi_7,
-          macd: ticker.macd,
-          macd_signal: ticker.macd_signal,
-          macd_histogram: ticker.macd_histogram,
-          bb_upper: ticker.bb_upper,
-          bb_middle: ticker.bb_middle,
-          bb_lower: ticker.bb_lower,
-          atr_14: ticker.atr_14,
-          date: ticker.last_technical_update,
-        },
-        fundamentals: {
-          ttm_revenue: ticker.ttm_revenue,
-          ttm_eps: ticker.ttm_eps,
-          ttm_net_income: ticker.ttm_net_income,
-          pe_ratio: ticker.pe_ratio,
-          latest_eps_yoy_growth: ticker.latest_eps_yoy_growth,
-        },
-        annual_history: annual.map(a => ({
-          fiscal_year: a.fiscal_year,
-          fiscal_period: a.fiscal_period,
-          revenue: a.revenue,
-          eps: a.eps,
-          net_income: a.net_income,
-          report_date: a.report_date,
-        })),
-        quarterly_history: quarterly.map(q => ({
-          fiscal_year: q.fiscal_year,
-          fiscal_period: `${q.fiscal_period} ${q.fiscal_year}`,
-          revenue: q.revenue,
-          eps: q.eps,
-          net_income: q.net_income,
-          report_date: q.report_date,
-        })),
-      },
-    });
+    res.json(await readStockDetail(req.params.symbol.toUpperCase()));
   } catch (err) {
     logger.error('Stock detail failed', { error: err.message, symbol: req.params.symbol });
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    res.status(err.status || 500).json({ success: false, error: err.status === 404 ? err.message : 'Internal server error' });
   }
+}
+
+async function readStockDetail(symbol) {
+  const [ticker, quarterly, annual] = await Promise.all([
+    Ticker.findOne({ where: { symbol }, raw: true }),
+    IncomeStatement.findAll({
+      where: { symbol, period_type: 'Quarterly' },
+      order: [['fiscal_year', 'DESC'], ['fiscal_period', 'DESC']],
+      limit: 32,
+      raw: true,
+    }),
+    IncomeStatement.findAll({
+      where: { symbol, period_type: 'Annual' },
+      order: [['fiscal_year', 'DESC']],
+      limit: 8,
+      raw: true,
+    }),
+  ]);
+
+  if (!ticker) { const error = new Error('Stock not found'); error.status = 404; throw error; }
+
+  return {
+    success: true,
+    data: {
+      symbol: ticker.symbol,
+      company_name: ticker.company_name,
+      description: ticker.description,
+      sector: ticker.sector,
+      industry: ticker.industry,
+      market_cap: ticker.market_cap,
+      is_favorite: ticker.is_favorite === true || ticker.is_favorite === 1 || ticker.is_favorite === 'true',
+      // Technical data now comes directly from Tickers
+      current_metrics: {
+        price: ticker.current_price,
+        price_change_pct: ticker.price_change_pct,
+        volume: ticker.volume,
+        rsi_14: ticker.rsi_14,
+        rsi_7: ticker.rsi_7,
+        macd: ticker.macd,
+        macd_signal: ticker.macd_signal,
+        macd_histogram: ticker.macd_histogram,
+        bb_upper: ticker.bb_upper,
+        bb_middle: ticker.bb_middle,
+        bb_lower: ticker.bb_lower,
+        atr_14: ticker.atr_14,
+        date: ticker.last_technical_update,
+      },
+      fundamentals: {
+        ttm_revenue: ticker.ttm_revenue,
+        ttm_eps: ticker.ttm_eps,
+        ttm_net_income: ticker.ttm_net_income,
+        pe_ratio: ticker.pe_ratio,
+        latest_eps_yoy_growth: ticker.latest_eps_yoy_growth,
+      },
+      annual_history: annual.map(a => ({
+        currency: a.currency,
+        fiscal_year: a.fiscal_year,
+        fiscal_period: a.fiscal_period,
+        revenue: a.revenue,
+        eps: a.eps,
+        net_income: a.net_income,
+        report_date: a.report_date,
+      })),
+      quarterly_history: quarterly.map(q => ({
+        currency: q.currency,
+        fiscal_year: q.fiscal_year,
+        fiscal_period: `${q.fiscal_period} ${q.fiscal_year}`,
+        revenue: q.revenue,
+        eps: q.eps,
+        net_income: q.net_income,
+        report_date: q.report_date,
+      })),
+    },
+  };
 }
 
 // ════════════════════════════════════
@@ -273,50 +330,14 @@ async function getChartData(req, res) {
       });
     }
 
-    // Check cache
-    const cacheKey = `chart:${symbol}:${range}`;
-    const cached = getCached(cacheKey);
-    if (cached) return res.json(cached);
-
-    // 💡 ดึงตั้งแต่วันแรกที่เปิดตลาดเสมอ
-    const period1Str = '1970-01-01'; 
-
-    const result = await yf.chart(symbol, {
-      period1: period1Str,
-      interval: rangeConfig.interval,
+    const response = await chartDataService.get(symbol, range, rangeConfig.interval, {
+      refresh: req.query.refresh === 'true',
     });
-
-    if (!result || !result.quotes || result.quotes.length === 0) {
-      return res.status(404).json({ success: false, error: 'No chart data available' });
-    }
-
-    // ฟอร์แมตข้อมูลส่งกลับไปให้ Lightweight Charts
-    const data = result.quotes
-      .filter(q => q.open != null && q.close != null)
-      .map(q => {
-        return {
-          time: q.date.toISOString().split('T')[0], // วันที่ YYYY-MM-DD
-          open: parseFloat(q.open.toFixed(2)),
-          high: parseFloat(q.high.toFixed(2)),
-          low: parseFloat(q.low.toFixed(2)),
-          close: parseFloat(q.close.toFixed(2)),
-          volume: q.volume || 0,
-        };
-      });
-
-    const response = {
-      success: true,
-      symbol,
-      range,
-      interval: rangeConfig.interval,
-      data,
-    };
-
-    setCache(cacheKey, response);
+    res.set('Cache-Control', 'no-store');
     res.json(response);
   } catch (err) {
     logger.error('Chart data failed', { error: err.message, symbol: req.params.symbol });
-    res.status(500).json({ success: false, error: 'Failed to fetch chart data' });
+    res.status(err.status || 500).json({ success: false, error: err.status === 404 ? err.message : 'Failed to fetch chart data' });
   }
 }
 
@@ -328,104 +349,16 @@ async function getForecast(req, res) {
   try {
     const symbol = req.params.symbol.toUpperCase();
 
-    // Check cache first (10 min TTL for forecasts)
+    // Reuse forecast data for one minute.
     const cacheKey = `forecast:${symbol}`;
-    const cached = getCached(cacheKey, 600000);
+    const cached = getCached(cacheKey, 60000);
     if (cached) return res.json(cached);
 
     const summary = await yf.quoteSummary(symbol, {
       modules: ['earningsTrend', 'financialData', 'earnings']
     });
 
-    const fd = summary.financialData || {};
-    const earnings = summary.earnings || {};
-    const earningsTrend = summary.earningsTrend?.trend || [];
-
-    // Extract analyst estimates
-    const currentQuarter = earningsTrend.find(t => t.period === '0q') || {};
-    const nextQuarter = earningsTrend.find(t => t.period === '+1q') || {};
-    const currentYear = earningsTrend.find(t => t.period === '0y') || {};
-    const nextYear = earningsTrend.find(t => t.period === '+1y') || {};
-
-    // Extract earnings history
-    const earningsHistory = earnings.earningsChart?.quarterly || [];
-
-    const response = {
-      success: true,
-      symbol,
-      data: {
-        // Target Price & Recommendation
-        target_price: {
-          current: fd.currentPrice || null,
-          mean: fd.targetMeanPrice || null,
-          low: fd.targetLowPrice || null,
-          high: fd.targetHighPrice || null,
-        },
-        recommendation: {
-          key: fd.recommendationKey || null,       // "buy", "hold", "sell"
-          mean: fd.recommendationMean || null,      // 1.0 (Strong Buy) to 5.0 (Strong Sell)
-          analysts: fd.numberOfAnalystOpinions || 0,
-        },
-
-        // EPS Estimates
-        eps_estimates: {
-          current_quarter: {
-            period: currentQuarter.period || '0q',
-            estimate: currentQuarter.earningsEstimate?.avg || null,
-            low: currentQuarter.earningsEstimate?.low || null,
-            high: currentQuarter.earningsEstimate?.high || null,
-            analysts: currentQuarter.earningsEstimate?.numberOfAnalysts || 0,
-          },
-          next_quarter: {
-            period: nextQuarter.period || '+1q',
-            estimate: nextQuarter.earningsEstimate?.avg || null,
-            low: nextQuarter.earningsEstimate?.low || null,
-            high: nextQuarter.earningsEstimate?.high || null,
-            analysts: nextQuarter.earningsEstimate?.numberOfAnalysts || 0,
-          },
-        },
-
-        // Revenue Estimates
-        revenue_estimates: {
-          current_quarter: {
-            period: currentQuarter.period || '0q',
-            estimate: currentQuarter.revenueEstimate?.avg || null,
-            low: currentQuarter.revenueEstimate?.low || null,
-            high: currentQuarter.revenueEstimate?.high || null,
-            analysts: currentQuarter.revenueEstimate?.numberOfAnalysts || 0,
-          },
-          next_quarter: {
-            period: nextQuarter.period || '+1q',
-            estimate: nextQuarter.revenueEstimate?.avg || null,
-            low: nextQuarter.revenueEstimate?.low || null,
-            high: nextQuarter.revenueEstimate?.high || null,
-            analysts: nextQuarter.revenueEstimate?.numberOfAnalysts || 0,
-          },
-        },
-
-        // Earnings History (Actual vs Estimate)
-        earnings_history: earningsHistory.map(e => ({
-          quarter: e.date,
-          actual: e.actual || null,
-          estimate: e.estimate || null,
-          surprise_pct: e.surprisePercent || null,
-        })),
-
-        // Yearly outlook
-        yearly_outlook: {
-          current_year: {
-            eps_estimate: currentYear.earningsEstimate?.avg || null,
-            revenue_estimate: currentYear.revenueEstimate?.avg || null,
-            growth: currentYear.growth?.raw || null,
-          },
-          next_year: {
-            eps_estimate: nextYear.earningsEstimate?.avg || null,
-            revenue_estimate: nextYear.revenueEstimate?.avg || null,
-            growth: nextYear.growth?.raw || null,
-          },
-        },
-      },
-    };
+    const response = buildForecastResponse(symbol, summary);
 
     setCache(cacheKey, response);
     res.json(response);
@@ -459,52 +392,57 @@ async function getSectors(req, res) {
  */
 async function getFinancialChartData(req, res) {
   try {
-    const symbol = req.params.symbol.toUpperCase();
-
-    // Fetch both Annual and Quarterly data
-    const [quarterly, annual] = await Promise.all([
-      IncomeStatement.findAll({
-        where: { symbol, period_type: 'Quarterly' },
-        order: [['fiscal_year', 'ASC'], ['fiscal_period', 'ASC']],
-        raw: true,
-      }),
-      IncomeStatement.findAll({
-        where: { symbol, period_type: 'Annual' },
-        order: [['fiscal_year', 'ASC']],
-        raw: true,
-      }),
-    ]);
-
-    // Zero Data Loss Logic: Mapping and Sorting (Oldest to Newest)
-    const quarterlyData = quarterly.map(q => ({
-      period: `${q.fiscal_period} ${q.fiscal_year}`,
-      revenue: q.revenue !== null ? parseFloat(q.revenue) : null,
-      eps: q.eps !== null ? parseFloat(q.eps) : null,
-      sortKey: `${q.fiscal_year}-${q.fiscal_period}`
-    }));
-
-    const annualData = annual.map(a => ({
-      period: `${a.fiscal_year}`,
-      revenue: a.revenue !== null ? parseFloat(a.revenue) : null,
-      eps: a.eps !== null ? parseFloat(a.eps) : null,
-      sortKey: `${a.fiscal_year}`
-    }));
-
-    // Log array lengths for debug as requested
-    console.log(`[DEBUG] Financial Chart Data for ${symbol}: Quarterly=${quarterlyData.length}, Annual=${annualData.length}`);
-
-    res.json({
-      success: true,
-      symbol,
-      data: {
-        quarterly: quarterlyData,
-        annual: annualData
-      }
-    });
+    res.set('Cache-Control', 'no-store');
+    res.json(await readFinancialChartData(req.params.symbol.toUpperCase()));
   } catch (err) {
     logger.error('Financial chart API failed', { error: err.message, symbol: req.params.symbol });
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    res.status(err.status || 500).json({ success: false, error: err.status === 404 ? err.message : 'Internal server error' });
   }
+}
+
+async function readFinancialChartData(symbol) {
+  // Fetch both Annual and Quarterly data
+  const [quarterly, annual] = await Promise.all([
+    IncomeStatement.findAll({
+      where: { symbol, period_type: 'Quarterly' },
+      order: [['fiscal_year', 'ASC'], ['fiscal_period', 'ASC']],
+      raw: true,
+    }),
+    IncomeStatement.findAll({
+      where: { symbol, period_type: 'Annual' },
+      order: [['fiscal_year', 'ASC']],
+      raw: true,
+    }),
+  ]);
+
+  // Zero Data Loss Logic: Mapping and Sorting (Oldest to Newest)
+  const quarterlyData = quarterly.map(q => ({
+    currency: q.currency,
+    period: `${q.fiscal_period} ${q.fiscal_year}`,
+    revenue: q.revenue !== null ? parseFloat(q.revenue) : null,
+    eps: q.eps !== null ? parseFloat(q.eps) : null,
+    sortKey: `${q.fiscal_year}-${q.fiscal_period}`
+  }));
+
+  const annualData = annual.map(a => ({
+    currency: a.currency,
+    period: `${a.fiscal_year}`,
+    revenue: a.revenue !== null ? parseFloat(a.revenue) : null,
+    eps: a.eps !== null ? parseFloat(a.eps) : null,
+    sortKey: `${a.fiscal_year}`
+  }));
+
+  // Log array lengths for debug as requested
+  console.log(`[DEBUG] Financial Chart Data for ${symbol}: Quarterly=${quarterlyData.length}, Annual=${annualData.length}`);
+
+  return {
+    success: true,
+    symbol,
+    data: {
+      quarterly: quarterlyData,
+      annual: annualData
+    }
+  };
 }
 
 // ════════════════════════════════════
@@ -522,6 +460,7 @@ async function toggleFavorite(req, res) {
     // Toggle the favorite status
     const nextState = !ticker.is_favorite;
     await Ticker.update({ is_favorite: nextState }, { where: { symbol } });
+    stockSnapshotService.updateFavorite(symbol, nextState);
     
     // Clear cache if needed since favorites state changed
     cache.clear(); 
@@ -537,4 +476,4 @@ async function toggleFavorite(req, res) {
   }
 }
 
-module.exports = { screenStocks, getStockDetail, getChartData, getForecast, getSectors, getFinancialChartData, toggleFavorite };
+module.exports = { screenStocks, getStockDetail, getStockSnapshot, getChartData, getForecast, getSectors, getFinancialChartData, toggleFavorite };

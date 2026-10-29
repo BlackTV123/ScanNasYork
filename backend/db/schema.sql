@@ -1,19 +1,16 @@
 -- ============================================
 -- ScanNasYork Database Schema
--- PostgreSQL 13+
+-- MySQL 8.0+
 -- ============================================
 
--- Drop tables if they exist (development only)
-DROP TABLE IF EXISTS Income_Statements CASCADE;
-DROP TABLE IF EXISTS Daily_Metrics CASCADE;
-DROP TABLE IF EXISTS Tickers CASCADE;
+-- Non-destructive MySQL schema. Select the target database before running.
 
 -- ============================================
--- 1. Tickers Table (Main Registry)
+-- 1. tickers Table (Main Registry)
 --    Stores pre-computed fundamental + technical data
 -- ============================================
-CREATE TABLE Tickers (
-  id SERIAL PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS tickers (
+  id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   symbol VARCHAR(10) UNIQUE NOT NULL,
   company_name VARCHAR(255) NOT NULL,
   description TEXT,
@@ -46,71 +43,30 @@ CREATE TABLE Tickers (
   bb_middle DECIMAL(10, 2),
   bb_lower DECIMAL(10, 2),
   atr_14 DECIMAL(10, 2),
-  is_favorite BOOLEAN DEFAULT FALSE,
+  is_favorite BOOLEAN NOT NULL DEFAULT FALSE,
 
   -- Metadata
-  last_technical_update TIMESTAMP,
-  last_fundamental_update TIMESTAMP,
-  last_sec_update TIMESTAMP,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
+  last_technical_update DATETIME,
+  last_fundamental_update DATETIME,
+  last_sec_update DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_tickers_ttm_eps (ttm_eps),
+  KEY idx_tickers_ttm_revenue (ttm_revenue),
+  KEY idx_tickers_pe_ratio (pe_ratio),
+  KEY idx_tickers_sector (sector),
+  KEY idx_tickers_market_cap (market_cap),
+  KEY idx_tickers_rsi_14 (rsi_14),
+  KEY idx_tickers_current_price (current_price)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE INDEX idx_tickers_symbol ON Tickers(symbol);
-CREATE INDEX idx_tickers_ttm_eps ON Tickers(ttm_eps);
-CREATE INDEX idx_tickers_ttm_revenue ON Tickers(ttm_revenue);
-CREATE INDEX idx_tickers_pe_ratio ON Tickers(pe_ratio);
-CREATE INDEX idx_tickers_sector ON Tickers(sector);
-CREATE INDEX idx_tickers_market_cap ON Tickers(market_cap);
-CREATE INDEX idx_tickers_rsi_14 ON Tickers(rsi_14);
-CREATE INDEX idx_tickers_current_price ON Tickers(current_price);
-
--- ============================================
--- 2. Daily_Metrics Table (DEPRECATED — Soft)
---    Kept for reference. Workers no longer INSERT here.
---    Use "node db/migrate-technical-to-tickers.js" to
---    backfill Tickers, then this table can be DROPped.
--- ============================================
-CREATE TABLE Daily_Metrics (
-  id SERIAL PRIMARY KEY,
-  symbol VARCHAR(10) NOT NULL REFERENCES Tickers(symbol) ON DELETE CASCADE,
-  date DATE NOT NULL,
-
-  -- OHLCV
-  open DECIMAL(10, 2),
-  high DECIMAL(10, 2),
-  low DECIMAL(10, 2),
-  close DECIMAL(10, 2),
-  volume BIGINT,
-
-  -- Technical Indicators
-  rsi_14 DECIMAL(5, 2),
-  rsi_14_ma DECIMAL(5, 2),
-  rsi_14_bb_upper DECIMAL(5, 2),
-  rsi_14_bb_lower DECIMAL(5, 2),
-  rsi_7 DECIMAL(5, 2),
-  macd DECIMAL(10, 4),
-  macd_signal DECIMAL(10, 4),
-  macd_histogram DECIMAL(10, 4),
-  bb_upper DECIMAL(10, 2),
-  bb_lower DECIMAL(10, 2),
-  bb_middle DECIMAL(10, 2),
-  atr_14 DECIMAL(10, 2),
-
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE UNIQUE INDEX idx_dm_symbol_date ON Daily_Metrics(symbol, date DESC);
-CREATE INDEX idx_dm_date ON Daily_Metrics(date);
-CREATE INDEX idx_dm_rsi_14 ON Daily_Metrics(rsi_14);
-CREATE INDEX idx_dm_symbol ON Daily_Metrics(symbol);
 
 -- ============================================
--- 3. Income_Statements Table (Fundamental Data)
+-- 2. income_statements Table (Fundamental Data)
 -- ============================================
-CREATE TABLE Income_Statements (
-  id SERIAL PRIMARY KEY,
-  symbol VARCHAR(10) NOT NULL REFERENCES Tickers(symbol) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS income_statements (
+  id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  symbol VARCHAR(10) NOT NULL,
   period_type VARCHAR(10) NOT NULL CHECK (period_type IN ('Annual', 'Quarterly')),
   fiscal_year INT NOT NULL,
   fiscal_period VARCHAR(10) NOT NULL,
@@ -129,26 +85,19 @@ CREATE TABLE Income_Statements (
   report_date DATE NOT NULL,
   filing_date DATE,
   source_api VARCHAR(50),
-  created_at TIMESTAMP DEFAULT NOW()
-);
+  currency VARCHAR(3) NOT NULL DEFAULT 'USD',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY idx_is_symbol_period (symbol, fiscal_year, fiscal_period),
+  KEY idx_is_symbol (symbol),
+  KEY idx_is_report_date (report_date),
+  KEY idx_is_fiscal_year (fiscal_year),
+  CONSTRAINT fk_income_ticker FOREIGN KEY (symbol) REFERENCES tickers(symbol) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE UNIQUE INDEX idx_is_symbol_period ON Income_Statements(symbol, fiscal_year, fiscal_period);
-CREATE INDEX idx_is_symbol ON Income_Statements(symbol);
-CREATE INDEX idx_is_report_date ON Income_Statements(report_date);
-CREATE INDEX idx_is_fiscal_year ON Income_Statements(fiscal_year);
-
--- ============================================
--- 4. Trigger: Auto-update updated_at on Tickers
--- ============================================
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$ language 'plpgsql';
-
-CREATE TRIGGER update_tickers_updated_at
-  BEFORE UPDATE ON Tickers
-  FOR EACH ROW
-  EXECUTE FUNCTION update_updated_at_column();
+-- Durable country-economic snapshots, with source metadata and recent history.
+CREATE TABLE IF NOT EXISTS economic_series (
+  id VARCHAR(80) NOT NULL PRIMARY KEY,
+  dataset VARCHAR(30) NOT NULL,
+  payload JSON NOT NULL,
+  fetched_at DATETIME NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

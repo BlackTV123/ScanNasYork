@@ -1,0 +1,56 @@
+:root {
+  --space-3xs: 2px; --space-2xs: 4px; --space-xs: 8px; --space-sm: 12px; --space-md: 16px; --space-lg: 24px; --space-xl: 40px; --space-2xl: 64px; --space-3xl: 96px; --space-4xl: 144px;
+  --text-xs: 0.75rem; --text-sm: 0.875rem; --text-md: 1rem; --text-lg: 1.2rem; --text-xl: 1.44rem; --text-2xl: 1.728rem; --text-3xl: 2.074rem;
+  --text-display-s: 1.44rem; --text-display: 1.728rem; --text-section: 1.2rem; --text-title: 1rem; --text-lead: 1rem;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1); --ease-in: cubic-bezier(0.7, 0, 0.84, 0); --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-micro: 120ms; --dur-short: 220ms; --dur-long: 420ms;
+  --color-error: oklch(52% 0.19 27); --color-success: oklch(50% 0.12 150);
+  --container: 1440px; --gutter: 64px; --gap-columns: 32px; --section-gap-s: 120px; --section-gap: 144px; --section-gap-l: 176px;
+  --z-base: 1; --z-raised: 10; --z-dropdown: 100; --z-sticky: 200; --z-sticky-nav: 300; --z-modal: 400; --z-toast: 500; --z-tooltip: 600;
+  --color-paper: #0c1217; --color-paper-2: #111a21; --color-paper-3: #1b2932;
+  --color-ink: #edf3f5; --color-ink-2: #b8c7d0; --color-muted: #91a4af;
+  --color-rule: #293943;
+  --color-accent: #39d5a3; --color-accent-ink: #08261e; --color-focus: #69e9bd;
+  --font-display: "Geologica", ui-sans-serif, system-ui, sans-serif; --font-body: "Geologica", ui-sans-serif, system-ui, sans-serif; --font-outlier: var(--font-body);
+  --radius-card: 4px; --radius-pill: 999px; --rule-hair: 1px; --shadow-card: none;
+  --tracking-display: -0.02em;
+
+  --bg-primary: var(--color-paper); --bg-secondary: #152129;
+  --bg-card: var(--color-paper-2); --bg-card-hover: var(--color-paper-3);
+  --bg-surface: var(--color-paper-2); --bg-input: #0d161c;
+  --bg-overlay: rgba(12,18,23,.72);
+  --accent-primary: var(--color-accent); --accent-primary-hover: var(--color-focus);
+  --accent-secondary: var(--color-ink); --accent-gradient: var(--color-accent);
+  --accent-glow: none; --shadow-glow: none;
+  --color-bullish: #58dcb0; --color-bullish-bg: #17362d;
+  --color-bearish: #ff929c; --color-bearish-bg: #38242b;
+  --color-neutral: #ecc479; --color-neutral-bg: #342f23; --color-star: #ecc479;
+  --text-primary: var(--color-ink); --text-secondary: var(--color-ink-2);
+  --text-muted: var(--color-muted); --text-main: var(--color-ink); --text-accent: var(--color-accent);
+  --border-subtle: #23313a; --border-default: var(--color-rule); --border-color: var(--color-rule);
+  --border-control: #617783; --border-active: var(--color-focus);
+  --space-xs: 4px; --space-sm: 8px; --space-md: 16px; --space-lg: 24px; --space-xl: 32px; --space-2xl: 48px;
+  --radius-sm: 6px; --radius-md: 10px; --radius-lg: 10px; --radius-xl: 12px;
+  --shadow-sm: none; --shadow-md: none; --shadow-lg: 0 8px 24px rgba(0,0,0,.2);
+  --font-sans: var(--font-body); --font-mono: var(--font-body);
+  --transition-fast: 120ms ease-out; --transition-base: 180ms ease-out; --transition-slow: 220ms ease-out;
+}
+
+:root {
+  --legacy-color-1: rgba(17, 24, 39, 0.7);
+  --legacy-color-2: rgba(99, 102, 241, 0.15);
+  --legacy-color-3: rgba(99, 102, 241, 0.4);
+  --legacy-color-4: rgba(99, 102, 241, 0.1);
+  --legacy-color-5: rgba(255, 255, 255, 0.04);
+  --legacy-color-6: rgba(255, 255, 255, 0.08);
+  --legacy-color-7: rgba(16, 185, 129, 0.3);
+  --legacy-color-8: rgba(245, 158, 11, 0.3);
+  --legacy-color-9: rgba(239, 68, 68, 0.3);
+  --legacy-color-10: rgba(255, 255, 255, 0.02);
+  --legacy-color-11: rgba(255, 255, 255, 0.05);
+  --legacy-color-12: rgba(250, 204, 21, 0.4);
+  --legacy-color-13: rgba(250, 204, 21, 0.5);
+  --legacy-color-14: rgba(251, 191, 36, 0.6);
+  --legacy-color-15: rgba(251, 191, 36, 0.08);
+  --legacy-color-16: rgba(251, 191, 36, 0.15);
+}

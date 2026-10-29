@@ -3,7 +3,7 @@
  * 100% Free. No API Keys needed.
  *
  * NEW: Fetches 50 days of history into memory, calculates indicators,
- * and UPDATEs the Tickers table directly. No more Daily_Metrics INSERT.
+ * and UPDATEs the Tickers table directly.
  */
 
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
@@ -13,6 +13,7 @@ const yf = new YahooFinance();
 const { Ticker } = require('../models');
 const { calculateAll } = require('../utils/indicators');
 const logger = require('../utils/logger');
+const { workerOptions, technicalWhere } = require('../utils/worker-selection');
 
 // Sleep utility to avoid Yahoo IP bans
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -35,29 +36,20 @@ async function runTechnicalWorker() {
     const twelveHoursAgo = new Date();
     twelveHoursAgo.setHours(twelveHoursAgo.getHours() - 12);
 
-    const { Op } = require('sequelize');
-    const isForce = process.argv.includes('--force');
-    const targetSymbol = process.argv.find(arg => arg.startsWith('--symbol='))?.split('=')[1]?.toUpperCase();
-
-    const queryOptions = { attributes: ['symbol'], raw: true };
-
-    if (targetSymbol) {
-      queryOptions.where = { symbol: targetSymbol };
-      logger.info(`Targeting specific symbol: ${targetSymbol}`);
-    } else if (!isForce) {
-      queryOptions.where = {
-        [Op.or]: [
-          { last_technical_update: { [Op.lt]: twelveHoursAgo } },
-          { last_technical_update: null }
-        ]
-      };
-      logger.info('Checkpointing active: Only fetching stocks needing update (older than 12h).');
-    } else {
-      logger.info('FORCE mode: Fetching all stocks regardless of last update.');
-    }
+    const options = workerOptions();
+    const queryOptions = { attributes: ['symbol'], raw: true,
+      where: technicalWhere(options, twelveHoursAgo) };
+    logger.info(options.resume ? 'RESUME mode: Only stocks without a successful technical update.' :
+      options.force ? 'FORCE mode: Refreshing selected stocks.' : 'Checkpointing active: Only selected stocks needing an update.');
 
     const tickers = await Ticker.findAll(queryOptions);
     logger.info(`Loaded ${tickers.length} tickers to process.`);
+
+    if (!tickers.length) {
+      if (await Ticker.count() === 0) throw new Error('No ticker symbols in the database. Run npm run db:seed first.');
+      logger.info('No matching stocks need an update. Use --force to refresh recent stocks.');
+      return;
+    }
 
     // Date range: 50 days is enough for RSI(14), MACD(12/26/9), BB(20), ATR(14)
     const period1 = new Date();
@@ -97,7 +89,7 @@ async function runTechnicalWorker() {
 
           // Only update if we have valid price data
           if (todayBar && todayBar.c != null) {
-            // UPDATE Tickers directly — no more Daily_Metrics INSERT!
+            // Update latest technical values directly on tickers.
             await Ticker.update({
               current_price: todayBar.c,
               price_change_pct: changePct,
@@ -134,8 +126,10 @@ async function runTechnicalWorker() {
     }
 
     logger.info(`=== Yahoo Worker DONE === ${processed} ok, ${errors} errors in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+    if (errors) throw new Error(`Technical update incomplete: ${errors} stocks failed. Run with --resume to retry missing updates.`);
   } catch (err) {
-    logger.error('Technical worker fatal error', { error: err.message, stack: err.stack });
+    logger.error('Technical worker fatal error', { error: err.message });
+    throw err;
   }
 }
 

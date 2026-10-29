@@ -5,7 +5,7 @@
  */
 
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
-const { sequelize, Ticker, DailyMetric, IncomeStatement } = require('../models');
+const { sequelize } = require('../models');
 const logger = require('../utils/logger');
 
 (async () => {
@@ -16,18 +16,22 @@ const logger = require('../utils/logger');
 
     logger.info('Syncing models (creating tables)...');
     await sequelize.sync({ force: false }); // force: true would DROP existing tables
+    // Upgrade an existing pre-currency schema without rebuilding its records.
+    const columns = await sequelize.getQueryInterface().describeTable('income_statements');
+    if (!columns.currency) {
+      await sequelize.getQueryInterface().addColumn('income_statements', 'currency', {
+        type: require('sequelize').DataTypes.STRING(3), allowNull: false, defaultValue: 'USD',
+      });
+    }
     logger.info('All models synchronized successfully');
 
     // List created tables
-    const [results] = await sequelize.query(`
-      SELECT table_name FROM information_schema.tables
-      WHERE table_schema = 'public' ORDER BY table_name
-    `);
-    logger.info('Tables:', { tables: results.map(r => r.table_name) });
+    const tables = await sequelize.getQueryInterface().showAllTables();
+    logger.info('Tables:', { tables });
   } catch (err) {
     logger.error('Database initialization failed', { error: err.message });
+    process.exitCode = 1;
   } finally {
     await sequelize.close();
-    process.exit(0);
   }
 })();

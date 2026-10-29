@@ -11,158 +11,21 @@ const YahooFinance = require('yahoo-finance2').default;
 const yf = new YahooFinance({ suppressNotices: ['yahooSurvey', 'ripHistorical'] });
 const { Ticker, IncomeStatement, sequelize } = require('../models');
 const logger = require('../utils/logger');
+const { workerOptions, fundamentalWhere, needsYahoo, needsSec, resumeCandidates } = require('../utils/worker-selection');
 
-// SEC Headers Configuration
-const SEC_HEADERS = {
-    "User-Agent": "ScanNasYork_Project passakorn.study@example.com",
-    "Accept-Encoding": "gzip, deflate"
-};
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-function chunkArray(array, chunkSize) {
+const { getCikMapping, fetchSecIncomeStatements } = require('../services/stocks/sec-data');
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+function chunkArray(array, size) {
     const chunks = [];
-    for (let i = 0; i < array.length; i += chunkSize) {
-        chunks.push(array.slice(i, i + chunkSize));
-    }
+    for (let i = 0; i < array.length; i += size) chunks.push(array.slice(i, i + size));
     return chunks;
-}
-
-// 1. Fetch Ticker to CIK mapping from SEC
-async function getCikMapping() {
-    logger.info("Loading SEC CIK mapping...");
-    const response = await fetch("https://www.sec.gov/files/company_tickers.json", { headers: SEC_HEADERS });
-    if (!response.ok) throw new Error("Failed to fetch CIK mapping");
-    const data = await response.json();
-
-    const tickerToCik = {};
-    for (let key in data) {
-        const company = data[key];
-        const paddedCik = String(company.cik_str).padStart(10, '0');
-        tickerToCik[company.ticker] = paddedCik;
-    }
-    return tickerToCik;
-}
-
-// 2. Fetch Income Statements from SEC EDGAR
-async function fetchSecIncomeStatements(cik) {
-    const url = `https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`;
-    const res = await fetch(url, { headers: SEC_HEADERS });
-    if (!res.ok) throw new Error(`SEC API Error: ${res.status}`);
-    const data = await res.json();
-
-    const gaap = data.facts["us-gaap"];
-    if (!gaap) return [];
-
-    // Find all possible revenue concept keys
-    const revKeys = ["Revenues", "SalesRevenueNet", "RevenueFromContractWithCustomerExcludingAssessedTax", "SalesRevenueGoodsNet", "RevenuesNetOfInterestExpense"];
-    
-    // Get the units helper
-    const getUnits = (concept) => {
-        if (!concept || !concept.units) return null;
-        const u = concept.units.USD || concept.units.USDPerShare || concept.units["USD/shares"];
-        return (u && u.length > 0) ? u : null;
-    };
-
-    // 1. First Pass: Detect Fiscal Year End Month (needed for accurate period mapping)
-    let fyEndMonth = 12; // Default
-    const fyReports = getUnits(gaap.Revenues || gaap.SalesRevenueNet)?.filter(d => d.fp === 'FY') || [];
-    if (fyReports.length > 0) {
-        // Take the latest FY report to see which month it ends in
-        const latestFY = fyReports.sort((a, b) => b.fy - a.fy)[0];
-        fyEndMonth = new Date(latestFY.end).getMonth() + 1; // 1-12
-    }
-
-    const stmts = {};
-    const addFact = (arr, field) => {
-        if (!arr) return;
-        for (const item of arr) {
-            if (!item.fp) continue;
-            const endDate = new Date(item.end);
-            if (isNaN(endDate)) continue;
-
-            const days = (endDate - new Date(item.start)) / (1000 * 60 * 60 * 24);
-            
-            // Calculate fiscal year based on end date and detected FY end month.
-            // (Ignoring SEC 'fy' field because it can be misleading for restatements)
-            let fiscalYear = endDate.getFullYear();
-            if (endDate.getMonth() + 1 > fyEndMonth) {
-                fiscalYear += 1;
-            }
-            
-            let period = item.fp;
-            if (days > 80 && days < 105) period = item.fp.startsWith('Q') ? item.fp : 'Q4';
-            else if (days > 350 && days < 380) period = 'FY';
-            else continue;
-
-            const key = `${fiscalYear}-${period}`;
-            if (!stmts[key]) {
-                stmts[key] = { fiscal_year: fiscalYear, fiscal_period: period, report_date: item.end };
-            }
-
-            const isLatest = !stmts[key].filed || item.filed > stmts[key].filed;
-            const hasFrame = !!item.frame;
-            const isNewField = !stmts[key][field];
-
-            if (item.val !== null && (isNewField || (hasFrame && isLatest) || isLatest)) {
-                stmts[key][field] = item.val;
-                if (hasFrame || isLatest) stmts[key].filed = item.filed;
-                stmts[key].report_date = item.end;
-            }
-        }
-    };
-
-    // 1. Merge all potential Revenue tags
-    for (const k of revKeys) {
-        addFact(getUnits(gaap[k]), 'revenue');
-    }
-    // Fallback for revenue if none of the above found
-    if (Object.values(stmts).every(s => s.revenue == null)) {
-        const fallbackKey = Object.keys(gaap).find(k => k.toLowerCase().includes("revenue") && gaap[k].units);
-        if (fallbackKey) addFact(getUnits(gaap[fallbackKey]), 'revenue');
-    }
-
-    // 2. Add Net Income and EPS
-    addFact(getUnits(gaap.NetIncomeLoss), 'net_income');
-    addFact(getUnits(gaap.EarningsPerShareDiluted) || getUnits(gaap.EarningsPerShareBasic), 'eps');
-
-
-    // 4. Auto-Calculate Q4 (Since SEC 10-K merges Q4 into FY)
-    const years = [...new Set(Object.values(stmts).map(s => s.fiscal_year))];
-    for (const yr of years) {
-        const fy = stmts[`${yr}-FY`];
-        const q1 = stmts[`${yr}-Q1`];
-        const q2 = stmts[`${yr}-Q2`];
-        const q3 = stmts[`${yr}-Q3`];
-        const q4Key = `${yr}-Q4`;
-
-        if (fy && q1 && q2 && q3 && !stmts[q4Key]) {
-            const calcQ4 = {
-                fiscal_year: yr,
-                fiscal_period: 'Q4',
-                report_date: fy.report_date,
-            };
-            if (fy.revenue != null && q1.revenue != null && q2.revenue != null && q3.revenue != null) {
-                calcQ4.revenue = fy.revenue - q1.revenue - q2.revenue - q3.revenue;
-            }
-            if (fy.net_income != null && q1.net_income != null && q2.net_income != null && q3.net_income != null) {
-                calcQ4.net_income = fy.net_income - q1.net_income - q2.net_income - q3.net_income;
-            }
-            if (Object.keys(calcQ4).length > 3) stmts[q4Key] = calcQ4;
-        }
-    }
-
-    return Object.values(stmts).map(s => {
-        delete s.filed;
-        return s;
-    });
 }
 
 // 3. Fetch Earnings Calendar from FMP (Recent 30 days)
 async function getEarningsRecent() {
     const apiKeyStr = process.env.FMP_API_KEY || '';
-    const apiKey = apiKeyStr.replace('apikey=', '');
-    if (!apiKey) return [];
+    const apiKey = apiKeyStr.replace(/^apikey=/, '').trim();
+    if (!apiKey || apiKey.startsWith('your_')) return [];
 
     const today = new Date();
     const from = new Date(today);
@@ -215,9 +78,10 @@ async function runGlobalQ4Fix() {
                     const data = years[yr];
                     if (data.FY && data.Q1 && data.Q2 && data.Q3 && !data.Q4) {
                         const fy = data.FY, q1 = data.Q1, q2 = data.Q2, q3 = data.Q3;
+                        if (![q1, q2, q3].every(row => row.currency === fy.currency)) continue;
                         const calcQ4 = {
                             symbol, period_type: 'Quarterly', fiscal_year: parseInt(yr), fiscal_period: 'Q4',
-                            report_date: fy.report_date, source_api: 'auto_global_fix'
+                            report_date: fy.report_date, source_api: 'auto_global_fix', currency: fy.currency
                         };
                         const sub = (f, a, b, c) => (f == null || a == null || b == null || c == null) ? null : (BigInt(f) - BigInt(a) - BigInt(b) - BigInt(c)).toString();
                         calcQ4.revenue = sub(fy.revenue, q1.revenue, q2.revenue, q3.revenue);
@@ -236,11 +100,6 @@ async function runFundamentalWorker() {
     logger.info('=== Yahoo + SEC Hybrid Smart Worker START ===');
 
     try {
-        const [cikMap, earningsRecent] = await Promise.all([
-            getCikMapping(),
-            getEarningsRecent()
-        ]);
-
         const twelveHoursAgo = new Date();
         twelveHoursAgo.setHours(twelveHoursAgo.getHours() - 12);
 
@@ -251,43 +110,47 @@ async function runFundamentalWorker() {
         ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
 
         const { Op } = require('sequelize');
-        const isForce = process.argv.includes('--force') || process.argv.includes('-f') || process.argv.includes('--full');
-        const targetSymbol = process.argv.find(arg => arg.startsWith('--symbol='))?.split('=')[1]?.toUpperCase();
-
-        const queryOptions = { attributes: ['symbol', 'last_sec_update'], raw: true };
-        const where = {};
-
-        if (targetSymbol) {
-            where.symbol = targetSymbol;
-            logger.info(`Targeting specific symbol: ${targetSymbol}`);
-        } else if (!isForce) {
-            where[Op.or] = [
-                { last_fundamental_update: { [Op.lt]: twelveHoursAgo } },
-                { last_fundamental_update: null }
-            ];
-            logger.info('Checkpointing active: Only fetching stocks older than 12h.');
-        } else {
-            logger.info('FORCE mode: Fetching all stocks regardless of last update.');
-        }
-
-        queryOptions.where = where;
+        const options = workerOptions();
+        const isForce = options.force;
+        const queryOptions = { attributes: ['symbol', 'last_sec_update', 'last_fundamental_update'], raw: true,
+            where: fundamentalWhere(options, twelveHoursAgo) };
+        logger.info(options.resume ? 'RESUME mode: Retry missing Yahoo and SEC checkpoints independently.' :
+            isForce ? 'FORCE mode: Refreshing selected stocks.' : 'Checkpointing active: Only selected stocks needing an update.');
 
         const tickers = await Ticker.findAll(queryOptions);
-        const totalTickers = tickers.length;
+        let totalTickers = tickers.length;
         logger.info(`Loaded ${totalTickers} tickers to process.`);
 
+        if (!totalTickers) {
+            if (await Ticker.count() === 0) throw new Error('No ticker symbols in the database. Run npm run db:seed first.');
+            logger.info('No matching stocks need an update. Use --force to refresh recent stocks.');
+            return;
+        }
+
+        const [cikMap, earningsRecent] = await Promise.all([
+            getCikMapping(),
+            options.resume ? Promise.resolve([]) : getEarningsRecent()
+        ]);
+
+        const candidates = options.resume ? resumeCandidates(tickers, cikMap) : tickers;
+        if (options.resume) {
+            logger.info(`Resume: ${candidates.length} stocks with missing source updates; ${tickers.length - candidates.length} without an applicable SEC mapping skipped.`);
+            totalTickers = candidates.length;
+            if (!totalTickers) return;
+        }
         let processed = 0, errors = 0;
 
         // We'll process in chunks of 20 for Yahoo (High Speed)
-        const batches = chunkArray(tickers, 20);
+        const batches = chunkArray(candidates, 20);
 
         for (let i = 0; i < batches.length; i++) {
             const batch = batches[i];
 
             // Step 1: Parallel Yahoo Update (FAST)
             await Promise.all(batch.map(async (t) => {
+                if (!needsYahoo(t, options)) return;
                 try {
-                    const summary = await yf.quoteSummary(t.symbol, { modules: ['price', 'summaryProfile', 'financialData', 'defaultKeyStatistics', 'assetProfile'] });
+                    const summary = await yf.quoteSummary(t.symbol, { modules: ['price', 'summaryDetail', 'summaryProfile', 'financialData', 'defaultKeyStatistics', 'assetProfile'] });
                     const priceData = summary.price || {};
                     const profile = summary.summaryProfile || {};
                     const fd = summary.financialData || {};
@@ -299,7 +162,7 @@ async function runFundamentalWorker() {
                             sector: profile.sector || null,
                             industry: profile.industry || null,
                             market_cap: priceData.marketCap || null,
-                            pe_ratio: priceData.trailingPE || null,
+                            pe_ratio: summary.summaryDetail?.trailingPE ?? null,
                             ttm_eps: ks.trailingEps || null,
                             ttm_revenue: fd.totalRevenue || null,
                             latest_eps_yoy_growth: fd.earningsGrowth ? (fd.earningsGrowth * 100).toFixed(2) : null,
@@ -310,6 +173,7 @@ async function runFundamentalWorker() {
                         }, { where: { symbol: t.symbol } });
                     }
                 } catch (err) {
+                    errors++;
                     logger.warn(`Yahoo fail for ${t.symbol}: ${err.message}`);
                 }
             }));
@@ -323,9 +187,7 @@ async function runFundamentalWorker() {
                 // 2. Reported in last 30 days AND we haven't checked SEC in 30 days -> TRUE
                 // 3. Haven't checked SEC in 90 days (3 months) -> TRUE
                 const isEarningsDay = earningsRecent.includes(t.symbol);
-                const needsSecUpdate = isForce || 
-                    (isEarningsDay && (!t.last_sec_update || new Date(t.last_sec_update) < thirtyDaysAgo)) ||
-                    (!t.last_sec_update || new Date(t.last_sec_update) < ninetyDaysAgo);
+                const needsSecUpdate = needsSec(t, options, isEarningsDay, thirtyDaysAgo, ninetyDaysAgo);
 
                 if (cik && needsSecUpdate) {
                     try {
@@ -353,6 +215,7 @@ async function runFundamentalWorker() {
                                 eps: stmt.eps || null,
                                 report_date: stmt.report_date,
                                 source_api: 'sec_edgar',
+                                currency: 'USD',
                             });
                         }
 
@@ -365,7 +228,7 @@ async function runFundamentalWorker() {
                         
                         let streak = 0;
                         for (let j = 0; j < annualStmts.length - 1; j++) {
-                            if (BigInt(annualStmts[j].revenue) > BigInt(annualStmts[j+1].revenue)) {
+                            if (annualStmts[j].currency === annualStmts[j+1].currency && BigInt(annualStmts[j].revenue) > BigInt(annualStmts[j+1].revenue)) {
                                 streak++;
                             } else {
                                 break;
@@ -377,6 +240,7 @@ async function runFundamentalWorker() {
 
                         await sleep(110);
                     } catch (err) {
+                        errors++;
                         logger.warn(`SEC fail for ${t.symbol}: ${err.message}`);
                     }
                 } else {
@@ -391,23 +255,13 @@ async function runFundamentalWorker() {
         // AUTO-CALCULATE Q4 FOR ENTIRE DB AT THE END
         await runGlobalQ4Fix();
 
-        logger.info(`=== Worker DONE === ${processed} ok, ${errors} errors in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+        logger.info(`=== Worker DONE === ${processed} stocks checked, ${errors} source errors in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+        if (errors) throw new Error(`Fundamental update incomplete: ${errors} source errors. Run with --resume to retry missing updates.`);
     } catch (err) {
-        logger.error('Fundamental worker fatal error', { error: err.message, stack: err.stack });
+        logger.error('Fundamental worker fatal error', { error: err.message });
+        throw err;
     }
 }
-
-if (require.main === module) {
-    if (process.argv.includes('--cron')) {
-        const schedule = process.env.FUNDAMENTAL_WORKER_CRON || '0 20 * * 1-5';
-        logger.info(`Yahoo+SEC worker scheduled: ${schedule}`);
-        cron.schedule(schedule, runFundamentalWorker, { timezone: 'America/New_York' });
-    } else {
-        runFundamentalWorker().then(() => process.exit(0)).catch(() => process.exit(1));
-    }
-}
-
-module.exports = { runFundamentalWorker };
 
 if (require.main === module) {
     if (process.argv.includes('--cron')) {

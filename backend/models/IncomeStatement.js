@@ -42,6 +42,7 @@ const IncomeStatement = sequelize.define('IncomeStatement', {
   },
   filing_date: { type: DataTypes.DATEONLY },
   source_api: { type: DataTypes.STRING(50) },
+  currency: { type: DataTypes.STRING(3), allowNull: false, defaultValue: 'USD' },
 }, {
   tableName: 'income_statements',
   updatedAt: false,

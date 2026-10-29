@@ -58,12 +58,17 @@ app.use((req, res, next) => {
 // ============================================
 // Static Files (Frontend)
 // ============================================
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', '..', 'frontend', 'index.html'));
+});
+app.get('/home.html', (req, res) => res.redirect(302, '/'));
 app.use(express.static(path.join(__dirname, '..', '..', 'frontend')));
 
 // ============================================
 // API Routes
 // ============================================
 app.use('/api/v1/stocks', stockRoutes);
+app.use('/api/v1/markets', require('./routes/markets'));
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -71,13 +76,13 @@ app.get('/api/health', (req, res) => {
 });
 
 // ============================================
-// SPA Fallback — serve index.html for unmatched routes
+// Unknown browser destinations return to the Hero entry point.
 // ============================================
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ success: false, error: 'Endpoint not found' });
   }
-  res.sendFile(path.join(__dirname, '..', '..', 'frontend', 'index.html'));
+  res.redirect(302, '/');
 });
 
 // ============================================

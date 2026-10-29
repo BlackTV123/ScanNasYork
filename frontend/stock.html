@@ -5,13 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Stock detail view — candlestick charts, technical indicators, analyst forecasts, and fundamental analysis">
   <title>Stock Detail | ScanNasYork</title>
-  <link rel="stylesheet" href="/css/style.css">
-  <link rel="stylesheet" href="/css/responsive.css">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/workspace.css">
+  <link rel="stylesheet" href="css/responsive.css">
   <!-- TradingView Lightweight Charts v4 -->
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <!-- Chart.js for Financial Performance bar chart -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/site-navigation.css">
+  <script defer src="/js/components/site-navigation.js"></script>
 </head>
 <body>
 
@@ -28,26 +31,27 @@
         <div class="subtitle">Stock Detail</div>
       </div>
     </div>
+    <button type="button" class="site-nav-toggle" data-sidebar-toggle aria-controls="site-sidebar" aria-expanded="false" aria-label="Open navigation">Menu</button>
   </nav>
 
-  <a href="/" class="back-link">← Back to Screener</a>
+  <a href="/screener.html" class="back-link">← Back to Screener</a>
 
   <!-- STOCK HEADER -->
   <div class="stock-header" id="stock-header">
     <div>
       <div style="display: flex; align-items: center; gap: 12px;">
-        <div class="symbol-badge" id="detail-symbol">—</div>
+        <div class="symbol-badge" id="detail-symbol">&minus;</div>
         <button id="fav-star-btn" class="fav-star-btn" aria-label="Toggle Favorite" title="Add to Watchlist" style="background: none; border: none; font-size: 1.8rem; cursor: pointer; color: var(--text-muted); line-height: 1; transition: transform 0.2s, color 0.2s; padding: 0;">☆</button>
       </div>
-      <div class="company-name" id="detail-name">Loading...</div>
-      <span class="cell-sector" id="detail-sector" style="margin-top:8px;display:inline-block">—</span>
-      <div class="stock-description" style="margin-top: 15px; color: #b2b5be; font-size: 0.95rem; line-height: 1.5; max-width: 800px;">
-        <p id="stock-desc-text">Fetching company profile...</p>
+      <div class="company-name" id="detail-name">Loading…</div>
+      <span class="cell-sector" id="detail-sector" style="margin-top:8px;display:inline-block">&minus;</span>
+      <div class="stock-description" style="margin-top: 15px; color: var(--text-secondary); font-size: 0.95rem; line-height: 1.5; max-width: 800px;">
+        <p id="stock-desc-text">Fetching company profile…</p>
       </div>
     </div>
     <div class="price-display">
-      <div class="price-value" id="detail-price">—</div>
-      <div class="price-change" id="detail-change">—</div>
+      <div class="price-value" id="detail-price">&minus;</div>
+      <div class="price-change" id="detail-change">&minus;</div>
     </div>
   </div>
 
@@ -75,8 +79,8 @@
     </div>
     <div class="forecast-body" id="forecast-body">
       <div class="forecast-loading">
-        <div class="spinner-sm" style="width:20px;height:20px;border:2px solid rgba(148,163,184,0.15);border-top-color:#6366f1;border-radius:50%;animation:spin 0.8s linear infinite"></div>
-        Loading analyst data...
+        <div class="spinner-sm" style="width:20px;height:20px;border:2px solid var(--border-default);border-top-color:var(--accent-primary);border-radius:50%;animation:spin 0.8s linear infinite"></div>
+        Loading analyst data…
       </div>
     </div>
   </div>
@@ -98,7 +102,8 @@
     </div>
     <div class="panel-body">
       <div style="height: 350px; position: relative;">
-        <canvas id="fin-perf-chart"></canvas>
+        <canvas id="fin-perf-chart" role="img" aria-label="Revenue and earnings performance chart"></canvas>
+        <p id="financial-chart-status" class="financial-chart-status" role="status" hidden></p>
       </div>
     </div>
   </section>
@@ -121,7 +126,7 @@
             </tr>
           </thead>
           <tbody id="earnings-body">
-            <tr><td colspan="5" class="text-center" style="padding:24px;color:var(--text-muted)">Loading...</td></tr>
+            <tr><td colspan="5" class="text-center" style="padding:24px;color:var(--text-muted)">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -132,660 +137,10 @@
 
 <div id="toast-container" class="toast-container"></div>
 
-<style>
-  /* Earnings table alignment fixes */
-  .earnings-table th,
-  .earnings-table td {
-    font-variant-numeric: tabular-nums;
-  }
-  .earnings-table .row-annual {
-    background: rgba(99, 102, 241, 0.08);
-    border-top: 2px solid var(--border-default);
-  }
-  .earnings-table .row-annual td {
-    font-weight: 700;
-    padding-top: var(--space-md);
-    padding-bottom: var(--space-md);
-  }
-  .earnings-table .row-annual .cell-period {
-    font-size: 0.9rem;
-    color: var(--text-accent);
-  }
-  .earnings-table .row-quarter td {
-    padding-left: var(--space-lg);
-    color: var(--text-secondary);
-  }
-  .earnings-table .row-quarter .cell-period {
-    font-size: 0.78rem;
-    color: var(--text-muted);
-    padding-left: 28px;
-  }
-  .earnings-table .cell-number {
-    text-align: right;
-    font-family: var(--font-mono);
-    font-variant-numeric: tabular-nums;
-    min-width: 100px;
-  }
-  /* Financial Chart Styles */
-  .d-flex-between { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
-  .chart-controls { display: flex; gap: 12px; }
-  .toggle-group {
-    display: flex;
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 8px;
-    padding: 3px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-  }
-  .toggle-group button {
-    background: transparent;
-    border: none;
-    color: var(--text-muted);
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s;
-    position: relative;
-    z-index: 10;
-  }
-  .toggle-group button:hover {
-    color: white;
-    background: rgba(255, 255, 255, 0.1);
-  }
-  .toggle-group button.active {
-    background: var(--accent-primary);
-    color: white;
-    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
-  }
-</style>
 
-<script src="/js/utils.js"></script>
-<script src="/js/api.js"></script>
-<script>
-(function() {
-  'use strict';
 
-  const params = new URLSearchParams(window.location.search);
-  const symbol = params.get('symbol');
-  if (!symbol) { window.location.href = '/'; return; }
-
-  document.title = `${symbol.toUpperCase()} | ScanNasYork`;
-
-  // ── State ──
-  let candlestickChart = null;
-  let candlestickSeries = null;
-  let volumeSeries = null;
-  let currentRange = '1d';
-
-  document.addEventListener('DOMContentLoaded', async () => {
-    const overlay = document.getElementById('loading-overlay');
-    overlay.classList.add('active');
-
-    try {
-      // Load detail + financial chart + candlestick + forecast in parallel
-      const [detailRes, financialRes, chartRes] = await Promise.all([
-        getStockDetail(symbol),
-        fetch(`/api/v1/stocks/${symbol}/financial-chart`).then(r => r.json()),
-        getChartData(symbol, '1d'),
-      ]);
-
-      if (detailRes.success) renderDetail(detailRes.data);
-      if (chartRes.success) renderCandlestickChart(chartRes);
-
-      if (financialRes && financialRes.success) {
-        window._annualData = financialRes.data.annual;
-        window._quarterlyData = financialRes.data.quarterly;
-        renderFinancialChart();
-      }
-
-      // Load forecast separately (non-blocking)
-      loadForecast();
-    } catch (err) {
-      showToast(err.message, 'error');
-    } finally {
-      overlay.classList.remove('active');
-    }
-
-    // Chart range buttons
-    setupRangeButtons();
-  });
-
-  // ══════════════════════════════
-  // Chart Range Buttons
-  // ══════════════════════════════
-  function setupRangeButtons() {
-    const container = document.getElementById('chart-range-buttons');
-    container.addEventListener('click', async (e) => {
-      if (e.target.tagName !== 'BUTTON') return;
-      const range = e.target.dataset.range;
-      if (range === currentRange) return;
-
-      // Update active state
-      container.querySelectorAll('button').forEach(b => b.classList.remove('active'));
-      e.target.classList.add('active');
-      currentRange = range;
-
-      try {
-        const res = await getChartData(symbol, range);
-        if (res.success) {
-          updateCandlestickData(res);
-        }
-      } catch (err) {
-        showToast('Failed to load chart data', 'error');
-      }
-    });
-  }
-
-  // ══════════════════════════════
-  // TradingView Lightweight Charts
-  // ══════════════════════════════
-  function renderCandlestickChart(chartRes) {
-    const container = document.getElementById('candlestick-chart');
-    
-    candlestickChart = LightweightCharts.createChart(container, {
-      layout: {
-        background: { type: 'solid', color: '#0b0f19' },
-        textColor: '#9ca3af',
-        fontFamily: "'Inter', sans-serif",
-        fontSize: 11,
-      },
-      grid: {
-        vertLines: { color: 'rgba(99, 102, 241, 0.06)' },
-        horzLines: { color: 'rgba(99, 102, 241, 0.06)' },
-      },
-      crosshair: {
-        mode: LightweightCharts.CrosshairMode.Normal,
-        vertLine: {
-          color: 'rgba(99, 102, 241, 0.4)',
-          width: 1,
-          style: LightweightCharts.LineStyle.Dashed,
-          labelBackgroundColor: '#10b981',
-        },
-        horzLine: {
-          color: 'rgba(99, 102, 241, 0.4)',
-          width: 1,
-          style: LightweightCharts.LineStyle.Dashed,
-          labelBackgroundColor: '#10b981',
-        },
-      },
-      rightPriceScale: {
-        borderColor: 'rgba(99, 102, 241, 0.1)',
-        scaleMargins: { top: 0.1, bottom: 0.25 },
-      },
-      timeScale: {
-        borderColor: 'rgba(99, 102, 241, 0.1)',
-        timeVisible: chartRes.interval !== '1d',
-        secondsVisible: false,
-      },
-      handleScroll: { vertTouchDrag: false },
-    });
-
-    // Set layout options for dark theme
-    candlestickChart.priceScale('right').applyOptions({
-      textColor: '#9ca3af',
-    });
-    candlestickChart.timeScale().applyOptions({
-      textColor: '#9ca3af',
-    });
-
-    // Candlestick series
-    candlestickSeries = candlestickChart.addCandlestickSeries({
-      upColor: '#10b981',
-      downColor: '#ef4444',
-      borderUpColor: '#10b981',
-      borderDownColor: '#ef4444',
-      wickUpColor: '#10b981',
-      wickDownColor: '#ef4444',
-    });
-
-    // Volume series
-    volumeSeries = candlestickChart.addHistogramSeries({
-      priceFormat: { type: 'volume' },
-      priceScaleId: '',
-    });
-
-    volumeSeries.priceScale().applyOptions({
-      scaleMargins: { top: 0.8, bottom: 0 },
-    });
-
-    // Set initial data
-    setCandlestickData(chartRes.data);
-
-    // Auto-resize
-    const observer = new ResizeObserver(() => {
-      candlestickChart.applyOptions({
-        width: container.clientWidth,
-        height: container.clientHeight,
-      });
-    });
-    observer.observe(container);
-  }
-
-  function setCandlestickData(data) {
-    if (!data || data.length === 0) return;
-
-    const candleData = data.map(d => ({
-      time: d.time,
-      open: d.open,
-      high: d.high,
-      low: d.low,
-      close: d.close,
-    }));
-
-    const volumeData = data.map(d => ({
-      time: d.time,
-      value: d.volume,
-      color: d.close >= d.open
-        ? 'rgba(16, 185, 129, 0.3)'
-        : 'rgba(239, 68, 68, 0.3)',
-    }));
-
-    candlestickSeries.setData(candleData);
-    volumeSeries.setData(volumeData);
-    candlestickChart.timeScale().fitContent();
-  }
-
-  function updateCandlestickData(chartRes) {
-    // Update time scale settings for intraday vs daily
-    candlestickChart.applyOptions({
-      timeScale: {
-        timeVisible: chartRes.interval !== '1d',
-        secondsVisible: false,
-      },
-    });
-    setCandlestickData(chartRes.data);
-  }
-
-  // ══════════════════════════════
-  // Analyst Forecast
-  // ══════════════════════════════
-  async function loadForecast() {
-    const body = document.getElementById('forecast-body');
-    try {
-      const res = await getForecast(symbol);
-      if (res.success) {
-        renderForecast(res.data);
-      } else {
-        body.innerHTML = '<div class="forecast-error">No forecast data available</div>';
-      }
-    } catch (err) {
-      body.innerHTML = '<div class="forecast-error">Forecast data unavailable for this stock</div>';
-    }
-  }
-
-  function renderForecast(data) {
-    const body = document.getElementById('forecast-body');
-
-    // Recommendation badge class mapping
-    const recKey = (data.recommendation.key || 'none').toLowerCase().replace(/[\s_]/g, '-');
-    const recLabel = (data.recommendation.key || '—').replace(/_/g, ' ').toUpperCase();
-
-    // Target price
-    const tp = data.target_price;
-    const targetPriceHtml = tp.mean
-      ? `<div class="value">${formatPrice(tp.mean)}</div>
-         <div class="target-price-range">
-           <span class="low">${formatPrice(tp.low)}</span>
-           <span class="separator">—</span>
-           <span class="high">${formatPrice(tp.high)}</span>
-         </div>`
-      : '<div class="value" style="color:var(--text-muted)">—</div>';
-
-    // EPS estimates
-    const eps = data.eps_estimates;
-    const epsCurrentHtml = eps.current_quarter.estimate != null
-      ? `<div class="est-value">$${parseFloat(eps.current_quarter.estimate).toFixed(2)}</div>
-         <div class="est-range">${formatPrice(eps.current_quarter.low)} — ${formatPrice(eps.current_quarter.high)}</div>`
-      : '<div class="est-value" style="color:var(--text-muted)">—</div>';
-    
-    const epsNextHtml = eps.next_quarter.estimate != null
-      ? `<div class="est-value">$${parseFloat(eps.next_quarter.estimate).toFixed(2)}</div>
-         <div class="est-range">${formatPrice(eps.next_quarter.low)} — ${formatPrice(eps.next_quarter.high)}</div>`
-      : '<div class="est-value" style="color:var(--text-muted)">—</div>';
-
-    // Revenue estimates
-    const rev = data.revenue_estimates;
-    const revCurrentHtml = rev.current_quarter.estimate != null
-      ? `<div class="est-value">${formatLargeNumber(rev.current_quarter.estimate)}</div>
-         <div class="est-range">${formatLargeNumber(rev.current_quarter.low)} — ${formatLargeNumber(rev.current_quarter.high)}</div>`
-      : '<div class="est-value" style="color:var(--text-muted)">—</div>';
-
-    const revNextHtml = rev.next_quarter.estimate != null
-      ? `<div class="est-value">${formatLargeNumber(rev.next_quarter.estimate)}</div>
-         <div class="est-range">${formatLargeNumber(rev.next_quarter.low)} — ${formatLargeNumber(rev.next_quarter.high)}</div>`
-      : '<div class="est-value" style="color:var(--text-muted)">—</div>';
-
-    // Earnings history
-    const historyHtml = data.earnings_history.length > 0
-      ? `<div class="earnings-history-grid">
-          ${data.earnings_history.slice(0, 4).map(e => {
-            const surprise = e.surprise_pct != null ? parseFloat(e.surprise_pct) : null;
-            const surpriseClass = surprise != null ? (surprise >= 0 ? 'beat' : 'miss') : '';
-            const surpriseText = surprise != null ? `${surprise >= 0 ? '+' : ''}${surprise.toFixed(2)}%` : '';
-            return `
-              <div class="earnings-history-item">
-                <div class="quarter">${e.quarter || '—'}</div>
-                <div class="actual">${e.actual != null ? '$' + parseFloat(e.actual).toFixed(2) : '—'}</div>
-                ${surpriseText ? `<div class="surprise ${surpriseClass}">${surpriseText}</div>` : ''}
-              </div>`;
-          }).join('')}
-        </div>`
-      : '';
-
-    body.innerHTML = `
-      <!-- Target Price & Recommendation -->
-      <div class="forecast-top-row">
-        <div class="target-price-card">
-          <div class="label">Target Price (Mean)</div>
-          ${targetPriceHtml}
-        </div>
-        <div class="recommendation-card">
-          <div class="recommendation-badge ${recKey}">${recLabel}</div>
-          <div class="recommendation-analysts">${data.recommendation.analysts || 0} analysts</div>
-        </div>
-      </div>
-
-      <!-- Estimates Grid -->
-      <div class="estimate-grid">
-        <div class="estimate-section">
-          <div class="estimate-section-title">📊 EPS Estimates</div>
-          <div class="estimate-row">
-            <span class="est-label">Current Quarter</span>
-            <div>${epsCurrentHtml}</div>
-          </div>
-          <div class="estimate-row">
-            <span class="est-label">Next Quarter</span>
-            <div>${epsNextHtml}</div>
-          </div>
-        </div>
-        <div class="estimate-section">
-          <div class="estimate-section-title">💰 Revenue Estimates</div>
-          <div class="estimate-row">
-            <span class="est-label">Current Quarter</span>
-            <div>${revCurrentHtml}</div>
-          </div>
-          <div class="estimate-row">
-            <span class="est-label">Next Quarter</span>
-            <div>${revNextHtml}</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Earnings Surprise History -->
-      ${historyHtml ? `<div style="margin-top:var(--space-md)">
-        <div style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:var(--space-sm)">📈 Recent Earnings Surprise</div>
-        ${historyHtml}
-      </div>` : ''}
-    `;
-  }
-
-  // ══════════════════════════════
-  // Stock Detail
-  // ══════════════════════════════
-  function renderDetail(data) {
-    document.getElementById('detail-symbol').textContent = data.symbol;
-    document.getElementById('detail-name').textContent = data.company_name || '';
-    document.getElementById('detail-sector').textContent = data.sector || '—';
-    document.getElementById('stock-desc-text').textContent = data.description || 'No company description available.';
-
-    // Set favorite star state
-    const starBtn = document.getElementById('fav-star-btn');
-    if (starBtn) {
-      const isFav = data.is_favorite;
-      starBtn.classList.toggle('starred', isFav);
-      starBtn.classList.toggle('active', isFav);
-      starBtn.textContent = isFav ? '★' : '☆';
-      
-      starBtn.onclick = async () => {
-        try {
-          starBtn.classList.add('star-pop');
-          const res = await toggleFavorite(data.symbol);
-          if (res.success) {
-            const nextFav = res.is_favorite;
-            starBtn.classList.toggle('starred', nextFav);
-            starBtn.classList.toggle('active', nextFav);
-            starBtn.textContent = nextFav ? '★' : '☆';
-          }
-        } catch (err) {
-          alert('Failed to toggle favorite: ' + err.message);
-        } finally {
-          setTimeout(() => starBtn.classList.remove('star-pop'), 300);
-        }
-      };
-    }
-
-    const price = data.current_metrics?.price;
-    document.getElementById('detail-price').textContent = formatPrice(price);
-
-    const changePct = data.current_metrics?.price_change_pct;
-    const changeEl = document.getElementById('detail-change');
-    if (changePct != null) {
-      const pct = parseFloat(changePct);
-      changeEl.textContent = formatPct(pct);
-      changeEl.style.color = pct >= 0 ? 'var(--color-bullish)' : 'var(--color-bearish)';
-    }
-
-    // Metrics cards
-    const m = data.current_metrics || {};
-    const f = data.fundamentals || {};
-    const cards = [
-      { label: 'RSI (14)', value: m.rsi_14 != null ? parseFloat(m.rsi_14).toFixed(1) : '—' },
-      { label: 'MACD', value: m.macd != null ? parseFloat(m.macd).toFixed(4) : '—' },
-      { label: 'Volume', value: formatVolume(m.volume) },
-      { label: 'TTM EPS', value: f.ttm_eps != null ? formatNumber(f.ttm_eps) : '—' },
-      { label: 'TTM Revenue', value: formatLargeNumber(f.ttm_revenue) },
-      { label: 'P/E Ratio', value: f.pe_ratio != null ? formatNumber(f.pe_ratio) : '—' },
-      { label: 'EPS YoY Growth', value: formatPct(f.latest_eps_yoy_growth) },
-      { label: 'Market Cap', value: formatLargeNumber(data.market_cap) },
-      { label: 'ATR (14)', value: m.atr_14 != null ? formatNumber(m.atr_14) : '—' },
-    ];
-
-    document.getElementById('metrics-grid').innerHTML = cards.map(c => `
-      <div class="metric-card">
-        <div class="metric-label">${c.label}</div>
-        <div class="metric-value">${c.value}</div>
-      </div>
-    `).join('');
-
-    // Earnings table — Annual rows with quarterly breakdowns
-    renderEarningsTable(data.annual_history || [], data.quarterly_history || []);
-  }
-
-  function renderEarningsTable(annualData, quarterlyData) {
-    const tbody = document.getElementById('earnings-body');
-
-    if (annualData.length === 0 && quarterlyData.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding:24px;color:var(--text-muted)">No earnings data available</td></tr>';
-      return;
-    }
-
-    // 1. Group data by year
-    const annualByYear = {};
-    for (const a of annualData) annualByYear[a.fiscal_year] = a;
-
-    const quartersByYear = {};
-    for (const q of quarterlyData) {
-      const yr = q.fiscal_year;
-      if (!quartersByYear[yr]) quartersByYear[yr] = [];
-      quartersByYear[yr].push(q);
-    }
-
-    // 2. Get unique years from both sources and sort descending
-    const allYears = Array.from(new Set([
-      ...Object.keys(annualByYear).map(Number),
-      ...Object.keys(quartersByYear).map(Number)
-    ])).sort((a, b) => b - a);
-
-    // 3. Generate HTML
-    let html = '';
-    for (const yr of allYears) {
-      const annual = annualByYear[yr];
-      const quarters = quartersByYear[yr] || [];
-
-      // Annual summary row (if exists for this year)
-      if (annual) {
-        html += `
-          <tr class="row-annual">
-            <td class="cell-period">📅 FY ${yr}</td>
-            <td class="cell-number">${formatLargeNumber(annual.revenue)}</td>
-            <td class="cell-number">${annual.eps != null ? formatNumber(annual.eps, 4) : '—'}</td>
-            <td class="cell-number">${formatLargeNumber(annual.net_income)}</td>
-            <td class="cell-number" style="font-size:0.75rem">${annual.report_date || '—'}</td>
-          </tr>`;
-      } else {
-        html += `
-          <tr class="row-annual">
-            <td class="cell-period">📅 FY ${yr}</td>
-            <td class="cell-number" style="color:var(--text-muted)">—</td>
-            <td class="cell-number" style="color:var(--text-muted)">—</td>
-            <td class="cell-number" style="color:var(--text-muted)">—</td>
-            <td class="cell-number" style="color:var(--text-muted)">—</td>
-          </tr>`;
-      }
-
-      // Quarterly rows for this year
-      quarters.sort((a, b) => b.fiscal_period.localeCompare(a.fiscal_period));
-      for (const q of quarters) {
-        html += `
-        <tr class="row-quarter">
-          <td class="cell-period">${q.fiscal_period}</td>
-          <td class="cell-number">${formatLargeNumber(q.revenue)}</td>
-          <td class="cell-number">${q.eps != null ? formatNumber(q.eps, 4) : '—'}</td>
-          <td class="cell-number">${formatLargeNumber(q.net_income)}</td>
-          <td class="cell-number" style="font-size:0.75rem">${q.report_date || '—'}</td>
-        </tr>`;
-      }
-    }
-
-    tbody.innerHTML = html;
-  }
-
-  // ══════════════════════════════
-  // Financial Performance Chart
-  // ══════════════════════════════
-  window._annualData = [];
-  window._quarterlyData = [];
-  window._fpMetric = 'revenue';
-  window._fpPeriod = 'quarterly';
-  window._fpChart = null;
-
-  window.switchFinMetric = function(metric) {
-    window._fpMetric = metric;
-    document.getElementById('fp-btn-revenue').classList.toggle('active', metric === 'revenue');
-    document.getElementById('fp-btn-eps').classList.toggle('active', metric === 'eps');
-    renderFinancialChart();
-  };
-
-  window.switchFinPeriod = function(period) {
-    window._fpPeriod = period;
-    document.getElementById('fp-btn-quarterly').classList.toggle('active', period === 'quarterly');
-    document.getElementById('fp-btn-annual').classList.toggle('active', period === 'annual');
-    renderFinancialChart();
-  };
-
-  function renderFinancialChart() {
-    const canvas = document.getElementById('fin-perf-chart');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    
-    if (window._fpChart) {
-      window._fpChart.destroy();
-      window._fpChart = null;
-    }
-
-    let rawSource = window._fpPeriod === 'annual' ? window._annualData : window._quarterlyData;
-
-    if (!Array.isArray(rawSource) || rawSource.length === 0) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.font = '14px "JetBrains Mono", sans-serif';
-      ctx.fillStyle = '#FFFFFF'; 
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      const centerX = canvas.clientWidth / 2;
-      const centerY = canvas.clientHeight / 2;
-      ctx.fillText(`No ${window._fpPeriod} data available for this stock.`, centerX, centerY);
-      return;
-    }
-
-    let source = [...rawSource];
-
-    source.sort((a, b) => {
-      if (a.fiscal_year !== b.fiscal_year) return a.fiscal_year - b.fiscal_year;
-      const periodA = a.fiscal_period || '';
-      const periodB = b.fiscal_period || '';
-      return periodA.localeCompare(periodB);
-    });
-
-    const limit = window._fpPeriod === 'annual' ? 8 : 32;
-    if (source.length > limit) {
-      source = source.slice(-limit); 
-    }
-
-    const labels = source.map(d => d.period || `${d.fiscal_period || ''} ${d.fiscal_year}`);
-    let dataValues = source.map(d => d[window._fpMetric]);
-
-    if (window._fpMetric === 'revenue') {
-      dataValues = dataValues.map(v => v != null ? v / 1e9 : null);
-    }
-
-    const labelText = window._fpMetric === 'revenue' ? 'Revenue (Billion $)' : 'EPS ($)';
-    const barColor = window._fpMetric === 'revenue' ? '#10b981' : '#6366f1';
-
-    const formatCurrency = (val, isBillion) => {
-      if (val == null) return 'N/A';
-      const sign = val < 0 ? '-' : '';
-      const absVal = Math.abs(val).toFixed(2);
-      return `${sign}$${absVal}${isBillion ? 'B' : ''}`;
-    };
-
-    window._fpChart = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: labels,
-        datasets: [{
-          label: labelText,
-          data: dataValues,
-          backgroundColor: barColor,
-          borderRadius: 4,
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { labels: { color: '#f3f4f6', font: { weight: 'bold' } } },
-          tooltip: {
-            backgroundColor: '#0b0f19',
-            borderColor: 'rgba(99, 102, 241, 0.2)',
-            borderWidth: 1,
-            titleColor: '#f3f4f6',
-            bodyColor: '#f3f4f6',
-            titleFont: { family: 'JetBrains Mono' },
-            bodyFont: { family: 'JetBrains Mono' },
-            callbacks: {
-              label: function(context) {
-                return `${labelText}: ${formatCurrency(context.raw, window._fpMetric === 'revenue')}`;
-              }
-            }
-          }
-        },
-        scales: {
-          x: { ticks: { color: '#9ca3af' }, grid: { color: 'rgba(99, 102, 241, 0.08)' } },
-          y: { 
-            ticks: { 
-                color: '#9ca3af',
-                callback: function(value) {
-                    return formatCurrency(value, window._fpMetric === 'revenue');
-                }
-            }, 
-            grid: { color: 'rgba(99, 102, 241, 0.08)' } 
-          }
-        }
-      }
-    });
-  }
-})();
-</script>
+<script src="/js/shared/utils.js"></script>
+<script src="/js/shared/api.js"></script>
+<script src="/js/pages/stock.js"></script>
 </body>
 </html>

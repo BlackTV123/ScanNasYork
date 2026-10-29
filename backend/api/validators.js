@@ -26,7 +26,7 @@ const screenQuerySchema = Joi.object({
   market_cap_min: Joi.number().optional(),
   market_cap_max: Joi.number().optional(),
   sector: Joi.string().optional(),
-  search: Joi.string().optional(),
+  search: Joi.string().trim().empty('').optional(),
 
   // Pagination / Sorting
   limit: Joi.number().integer().min(1).max(10000).default(50),
@@ -34,7 +34,8 @@ const screenQuerySchema = Joi.object({
   sort_by: Joi.string().valid(
     'symbol', 'company_name', 'current_price', 'rsi_14',
     'macd', 'ttm_eps', 'ttm_revenue', 'pe_ratio',
-    'latest_eps_yoy_growth', 'market_cap'
+    'latest_eps_yoy_growth', 'market_cap', 'target_mean_price',
+    'revenue_yoy_growth', 'revenue_consecutive_years'
   ).default('symbol'),
   sort_order: Joi.string().valid('asc', 'desc').default('asc'),
 });

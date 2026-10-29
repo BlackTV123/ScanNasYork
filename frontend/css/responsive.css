@@ -1,94 +1,40 @@
-/* ============================================
-   ScanNasYork — Responsive Breakpoints
-   ============================================ */
-
-/* Tablet (768px and below) */
-@media (max-width: 768px) {
-  html { font-size: 13px; }
-
+/* Hallmark · responsive app workspace · v2.0.0 */
+@media (max-width: 1200px) {
+  .app-container { padding: var(--space-lg); }
+  .screener-layout { grid-template-columns: 220px minmax(0, 1fr); }
+  .filter-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .navbar-actions { gap: var(--space-md); }
+  .search-bar input { width: 200px; }
+  .navbar-stat { padding-left: var(--space-md); }
+}
+@media (max-width: 960px) {
+  .navbar { flex-wrap: wrap; }
+  .navbar-actions { width: 100%; }
+  .search-bar { flex: 1; }
+  .search-bar input { flex: 1; width: 100%; }
+  .screener-layout { grid-template-columns: minmax(0, 1fr); }
+  #panel-technical .filter-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  #panel-technical .filter-group:nth-child(n+3) { grid-column: auto; padding-top: 0; border-top: 0; }
+}
+@media (max-width: 640px) {
   .app-container { padding: var(--space-md); }
-
-  .navbar {
-    flex-direction: column;
-    gap: var(--space-md);
-    top: 0;
-    border-radius: 0;
-    margin-bottom: var(--space-md);
-    padding: var(--space-md);
-  }
-
-  .navbar-actions {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  .filter-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: var(--space-sm);
-  }
-
-  .filter-actions {
-    flex-wrap: wrap;
-  }
-
-  .results-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .data-table { font-size: 0.78rem; }
-  .data-table th,
-  .data-table td { padding: var(--space-xs) var(--space-sm); }
-
-  .cell-name { max-width: 120px; }
-
-  .metrics-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .stock-header {
-    flex-direction: column;
-  }
-
-  .stock-header .price-display {
-    text-align: left;
-  }
-}
-
-/* Mobile (375px and below) */
-@media (max-width: 480px) {
-  html { font-size: 12px; }
-
-  .app-container { padding: var(--space-sm); }
-
-  .navbar-stat { display: none; }
-
-  .filter-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .data-table th:nth-child(n+6),
-  .data-table td:nth-child(n+6) {
-    display: none;
-  }
-
-  .metrics-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .pagination {
-    flex-wrap: wrap;
-  }
-
-  .stock-header .symbol-badge { font-size: 1.5rem; }
-  .stock-header .price-value { font-size: 1.5rem; }
-}
-
-/* Large Desktop (1440px+) */
-@media (min-width: 1440px) {
-  html { font-size: 15px; }
-
-  .filter-grid {
-    grid-template-columns: repeat(5, 1fr);
-  }
+  .navbar { padding-block: var(--space-md); gap: var(--space-lg); }
+  .navbar-actions { flex-wrap: wrap; gap: var(--space-md); }
+  .search-bar { flex-basis: 100%; }
+  .navbar-stat { padding-left: 0; border-left: 0; }
+  .filter-grid, #panel-technical .filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .panel-header, .chart-panel-header, .forecast-panel-header { padding: var(--space-md); flex-wrap: wrap; }
+  .panel-body, .forecast-body { padding: var(--space-md); }
+  .filter-group label { min-height: 36px; display: flex; align-items: end; }
+  .filter-actions .btn-primary { width: 100%; }
+  .filter-actions .btn-secondary { flex: 1; }
+  .stock-header { flex-direction: column; }
+  .stock-header .price-display { text-align: left; }
+  .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .forecast-top-row, .estimate-grid { grid-template-columns: minmax(0, 1fr); }
+  .recommendation-card { align-items: flex-start; text-align: left; }
+  .earnings-history-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #candlestick-chart { height: 320px; }
+  .pagination { flex-wrap: wrap; justify-content: center; }
+  .data-table th, .data-table td { padding: var(--space-sm); }
 }

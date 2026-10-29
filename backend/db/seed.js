@@ -3,13 +3,13 @@
  *
  * Usage:
  *   npm run db:seed -- --demo   # Seed with demo data (no API keys needed)
- *   npm run db:seed             # Seed from Polygon.io API
+ *   npm run db:seed             # Import real Nasdaq and NYSE symbols (no API key)
  */
 
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
-const { sequelize, Ticker, DailyMetric, IncomeStatement } = require('../models');
-const { createApiClients, sleep } = require('../utils/api-clients');
+const { sequelize, Ticker, IncomeStatement } = require('../models');
 const logger = require('../utils/logger');
+const { getExchangeTickers } = require('../utils/symbol-directory');
 
 const DEMO_TICKERS = [
   { symbol: 'AAPL', company_name: 'Apple Inc.', sector: 'Technology', industry: 'Consumer Electronics', market_cap: 2800000000000 },
@@ -63,35 +63,13 @@ async function seedDemo() {
       ttm_net_income: Math.floor(t.market_cap * 0.03),
       pe_ratio: (10 + Math.random() * 40).toFixed(2),
       latest_eps_yoy_growth: (-20 + Math.random() * 60).toFixed(2),
+      rsi_14: (20 + Math.random() * 60).toFixed(2),
+      rsi_7: (20 + Math.random() * 60).toFixed(2),
+      macd: (-2 + Math.random() * 4).toFixed(4),
+      macd_signal: (-1 + Math.random() * 2).toFixed(4),
+      volume: Math.floor(1000000 + Math.random() * 50000000),
       last_technical_update: new Date(),
     });
-
-    // Generate 30 days of daily metrics
-    let p = parseFloat(price) * 0.92;
-    for (let d = 30; d >= 0; d--) {
-      const date = new Date();
-      date.setDate(date.getDate() - d);
-      if (date.getDay() === 0 || date.getDay() === 6) continue;
-
-      const change = (Math.random() - 0.48) * 5;
-      p = Math.max(10, p + change);
-
-      await DailyMetric.create({
-        symbol: t.symbol,
-        date: date.toISOString().split('T')[0],
-        open: (p - Math.random() * 2).toFixed(2),
-        high: (p + Math.random() * 3).toFixed(2),
-        low: (p - Math.random() * 3).toFixed(2),
-        close: p.toFixed(2),
-        volume: Math.floor(1000000 + Math.random() * 50000000),
-        rsi_14: (20 + Math.random() * 60).toFixed(2),
-        rsi_7: (20 + Math.random() * 60).toFixed(2),
-        macd: (-2 + Math.random() * 4).toFixed(4),
-        macd_signal: (-1 + Math.random() * 2).toFixed(4),
-        macd_histogram: (Math.random() * 2 - 1).toFixed(4),
-        bb_upper: (p * 1.05).toFixed(2),
-      });
-    }
 
     // Quarterly earnings (8 quarters)
     const baseRev = Math.floor(t.market_cap * 0.05);
@@ -118,42 +96,29 @@ async function seedDemo() {
   logger.info(`Seeded ${DEMO_TICKERS.length} tickers with metrics and earnings`);
 }
 
-async function seedFromAPI() {
+async function seedFromExchange() {
+  const tickers = await getExchangeTickers();
   await sequelize.sync();
-  const { polygon } = createApiClients();
-  logger.info('Fetching tickers from Polygon.io...');
-  const tickers = await polygon.getAllTickers();
-  logger.info(`Received ${tickers.length} tickers`);
-
-  let inserted = 0;
-  for (const t of tickers) {
-    if (!t.ticker || !t.name) continue;
-    try {
-      await Ticker.upsert({
-        symbol: t.ticker,
-        company_name: t.name,
-        sector: t.sic_description || null,
-        market_cap: t.market_cap || null,
-      });
-      inserted++;
-    } catch (err) {
-      logger.debug(`Skip ${t.ticker}: ${err.message}`);
-    }
+  // Only insert new symbols. Preserve prices, fundamentals and watchlists on re-import.
+  for (let i = 0; i < tickers.length; i += 500) {
+    await Ticker.bulkCreate(tickers.slice(i, i + 500), { ignoreDuplicates: true, logging: false });
   }
-  logger.info(`Inserted/updated ${inserted} tickers`);
+  logger.info(`Imported exchange directory: ${tickers.length} symbols; ${await Ticker.count()} total in database.`);
+  logger.info('Run npm run update:all to fetch prices, indicators and fundamentals.');
 }
 
 (async () => {
   try {
     if (process.argv.includes('--demo')) {
       await seedDemo();
+
     } else {
-      await seedFromAPI();
+      await seedFromExchange();
     }
   } catch (err) {
-    logger.error('Seed failed', { error: err.message, stack: err.stack });
+    logger.error('Seed failed', { error: err.message });
+    process.exitCode = 1;
   } finally {
     await sequelize.close();
-    process.exit(0);
   }
 })();

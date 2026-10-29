@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="ScanNasYork — High-performance quantamental stock screener for NYSE & NASDAQ. Screen 6,000+ equities with technical and fundamental filters.">
+  <title>ScanNasYork | Quantamental Stock Screener</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/workspace.css">
+  <link rel="stylesheet" href="css/responsive.css">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/site-navigation.css">
+  <script defer src="/js/components/site-navigation.js"></script>
+</head>
+<body>
+
+<!-- Loading Overlay -->
+<div id="loading-overlay" class="loading-overlay">
+  <div class="spinner"></div>
+</div>
+
+<div class="app-container screener-layout">
+
+  <!-- ═══ NAVBAR ═══ -->
+  <nav class="navbar" role="navigation" aria-label="Main navigation">
+    <a class="navbar-brand" href="/" aria-label="ScanNasYork home">
+      <div class="logo-icon">SN</div>
+      <div>
+        <h1>ScanNasYork</h1>
+        <div class="subtitle">Quantamental Screener</div>
+      </div>
+    </a>
+    <button type="button" class="site-nav-toggle" data-sidebar-toggle aria-controls="site-sidebar" aria-expanded="false" aria-label="Open navigation">Menu</button>
+    <div class="navbar-actions">
+      <div class="search-bar">
+        <input type="search" id="filter-search" placeholder="Search ticker or company…" aria-label="Search symbol or company name" title="Searches automatically as you type. Enter searches immediately." aria-controls="results-body">
+        <button class="btn btn-secondary btn-watchlist" id="btn-watchlist" title="Show Watchlist Only" aria-pressed="false">
+          <span class="watchlist-icon"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/></svg></span> Watchlist
+        </button>
+      </div>
+      <div class="navbar-stat">
+        <div class="label">Results</div>
+        <div class="value" id="total-stocks">&minus;</div>
+      </div>
+      <div class="navbar-stat">
+        <div class="label">Query Time</div>
+        <div class="value" id="exec-time">&minus;</div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ═══ TECHNICAL FILTERS ═══ -->
+  <section class="panel" id="panel-technical" aria-label="Technical filters">
+    <div class="panel-header">
+      <h2>Technical Filters</h2>
+      <button class="panel-toggle" aria-expanded="true" aria-label="Toggle panel">−</button>
+    </div>
+    <div class="panel-body">
+      <div class="filter-grid">
+        <div class="filter-group">
+          <label for="filter-rsi-min">RSI Min</label>
+          <input type="number" id="filter-rsi-min" placeholder="0" min="0" max="100" step="1">
+        </div>
+        <div class="filter-group">
+          <label for="filter-rsi-max">RSI Max</label>
+          <input type="number" id="filter-rsi-max" placeholder="100" min="0" max="100" step="1">
+        </div>
+        <div class="filter-group">
+          <label>MACD Positive</label>
+          <div class="toggle-wrapper">
+            <div class="toggle-switch" aria-checked="false" id="toggle-macd" role="switch" aria-label="MACD positive filter" tabindex="0"></div>
+            <span style="font-size:0.75rem;color:var(--text-muted)">Only Bullish</span>
+          </div>
+        </div>
+        <div class="filter-group">
+          <label>Base Building</label>
+          <div class="toggle-wrapper">
+            <div class="toggle-switch" aria-checked="false" id="toggle-base-building" role="switch" aria-label="Base Building filter" tabindex="0"></div>
+            <span style="font-size:0.75rem;color:var(--text-muted)">Find Tight Range</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ FUNDAMENTAL FILTERS ═══ -->
+  <section class="panel" id="panel-fundamental" aria-label="Fundamental filters" >
+    <div class="panel-header">
+      <h2>Fundamental Filters</h2>
+      <button class="panel-toggle" aria-expanded="true" aria-label="Toggle panel">−</button>
+    </div>
+    <div class="panel-body">
+      <div class="filter-grid">
+        <div class="filter-group">
+          <label for="filter-eps-min">EPS Min (TTM)</label>
+          <input type="number" id="filter-eps-min" placeholder="e.g. 1.00" step="0.01">
+        </div>
+        <div class="filter-group">
+          <label for="filter-eps-max">EPS Max (TTM)</label>
+          <input type="number" id="filter-eps-max" placeholder="e.g. 50.00" step="0.01">
+        </div>
+        <div class="filter-group">
+          <label for="filter-rev-min">Min Revenue ($)</label>
+          <input type="text" id="filter-rev-min" placeholder="e.g. 50M, 1B">
+        </div>
+        <div class="filter-group">
+          <label for="filter-rev-max">Max Revenue ($)</label>
+          <input type="text" id="filter-rev-max" placeholder="e.g. 500M, 2T">
+        </div>
+        <div class="filter-group">
+          <label for="filter-pe-max">P/E Ratio Max</label>
+          <input type="number" id="filter-pe-max" placeholder="e.g. 30" step="1">
+        </div>
+        <div class="filter-group">
+          <label for="filter-growth-min">EPS YoY Growth Min (%)</label>
+          <input type="number" id="filter-growth-min" placeholder="e.g. 10" step="1">
+        </div>
+        <div class="filter-group">
+          <label for="filter-rev-growth-min">Min Rev Growth YoY (%)</label>
+          <input type="number" id="filter-rev-growth-min" placeholder="e.g. 20">
+        </div>
+        <div class="filter-group">
+          <label for="filter-rev-consecutive">Consecutive Rev Growth (Years)</label>
+          <input type="number" id="filter-rev-consecutive" placeholder="e.g. 3">
+        </div>
+        <div class="filter-group">
+          <label for="filter-target-upside">Min Target Upside (%)</label>
+          <input type="number" id="filter-target-upside" placeholder="e.g. 30">
+        </div>
+        <div class="filter-group">
+          <label for="filter-mcap-min">Min Market Cap ($)</label>
+          <input type="text" id="filter-mcap-min" placeholder="e.g. 500M, 3B">
+        </div>
+        <div class="filter-group">
+          <label for="filter-mcap-max">Max Market Cap ($)</label>
+          <input type="text" id="filter-mcap-max" placeholder="e.g. 10B, 2T">
+        </div>
+        <div class="filter-group">
+          <label for="filter-sector">Sector</label>
+          <select id="filter-sector">
+            <option value="">All Sectors</option>
+          </select>
+        </div>
+      </div>
+      <div class="filter-actions">
+        <button class="btn btn-primary" id="btn-screen">Screen Stocks</button>
+        <button class="btn btn-secondary" id="btn-reset">Reset</button>
+        <button class="btn btn-secondary" id="btn-export">Export CSV</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ RESULTS ═══ -->
+  <div class="results-header" >
+    <div class="results-count">
+      Showing <strong id="result-count">0</strong> results
+      <span class="exec-time">in <span id="exec-time-inline">&minus;</span></span>
+    </div>
+  </div>
+
+  <div class="table-container">
+    <table class="data-table" role="grid" aria-label="Stock screening results">
+      <thead>
+        <tr>
+          <th id="th-star-filter" tabindex="0" role="button" aria-label="Show watchlist only" aria-pressed="false" class="th-star-filter" style="width: 50px; text-align: center; cursor: pointer;" title="Show Watchlist Only"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/></svg></th>
+          <th data-sort="symbol" class="sorted">Symbol <span class="sort-icon">▲</span></th>
+          <th data-sort="company_name">Company <span class="sort-icon">▲</span></th>
+          <th>Sector</th>
+          <th data-sort="current_price" style="text-align:right">Price <span class="sort-icon">▲</span></th>
+          <th data-sort="target_mean_price" style="text-align:right">Target <span class="sort-icon">▲</span></th>
+          <th style="text-align:right">Chg%</th>
+          <th data-sort="rsi_14" style="text-align:right">RSI <span class="sort-icon">▲</span></th>
+          <th data-sort="macd" style="text-align:right">MACD <span class="sort-icon">▲</span></th>
+          <th data-sort="ttm_eps" style="text-align:right">EPS <span class="sort-icon">▲</span></th>
+          <th data-sort="ttm_revenue" style="text-align:right">Revenue <span class="sort-icon">▲</span></th>
+          <th data-sort="revenue_yoy_growth" style="text-align:right">Rev YoY% (Streak) <span class="sort-icon">▲</span></th>
+          <th data-sort="pe_ratio" style="text-align:right">P/E <span class="sort-icon">▲</span></th>
+          <th data-sort="market_cap" style="text-align:right">Market Cap <span class="sort-icon">▲</span></th>
+          <th data-sort="latest_eps_yoy_growth" style="text-align:right">YoY% <span class="sort-icon">▲</span></th>
+          <th style="text-align:right">Volume</th>
+        </tr>
+      </thead>
+      <tbody id="results-body">
+        <tr><td colspan="16">
+          <div class="table-loading">
+            <div class="spinner-sm"></div>
+            <span>Loading stocks…</span>
+          </div>
+        </td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div id="pagination" class="pagination"></div>
+
+</div>
+
+<!-- Toast Container -->
+<div id="toast-container" class="toast-container"></div>
+
+<script src="/js/shared/utils.js"></script>
+<script src="/js/shared/api.js"></script>
+<script src="/js/pages/screener.js"></script>
+</body>
+</html>

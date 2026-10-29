@@ -3,12 +3,16 @@
   "version": "1.0.0",
   "description": "ScanNasYork Quantamental Stock Screener",
   "scripts": {
+    "test": "npm --prefix backend test",
     "start": "node backend/api/server.js",
     "dev": "node --watch backend/api/server.js",
+    "tunnel": "cloudflared tunnel --url http://127.0.0.1:3000 --no-autoupdate",
     "worker:technical": "node backend/workers/daily-technical.js",
     "worker:fundamental": "node backend/workers/fundamental.js",
     "update:all": "node backend/workers/update-all.js",
     "db:init": "node backend/db/init.js",
+    "db:check": "node backend/scripts/check-db.js",
+    "db:check-financials": "node backend/scripts/check-financials.js",
     "db:seed": "node backend/db/seed.js",
     "install:backend": "cd backend && npm install"
   },
